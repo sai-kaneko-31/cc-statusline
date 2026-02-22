@@ -44,3 +44,4 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 - `gh` CLI 未インストール時は PR 情報が無視される (エラーにならない)
 - stdin が不正 JSON の場合は `process.exit(0)` で無出力終了
 - Nerd Font 未インストールのターミナルではアイコンが文字化けする
+- OSC8 ハイパーリンクは一部のターミナルエミュレーターで動作しない (Claude Code 側の制限: [anthropics/claude-code#26356](https://github.com/anthropics/claude-code/issues/26356))。IDE 統合ターミナル (VS Code, Cursor 等) では動作するが、スタンドアロンのターミナルエミュレーター (Konsole, Windows Terminal 等) ではプレーンテキストとして表示される場合がある
