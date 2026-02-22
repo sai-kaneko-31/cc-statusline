@@ -244,7 +244,7 @@ let line2 = `${BOLD_BLUE}${modelIcon} ${padEnd(model, col1Len)}${RESET}`;
 if (usedPct != null && usedPct !== '') {
   const usedInt = Math.floor(parseFloat(usedPct));
   const compactThreshold = 85;
-  let remaining = Math.max(0, compactThreshold - usedInt);
+  const remaining = Math.max(0, compactThreshold - usedInt);
   const filled = Math.min(10, Math.floor((remaining * 10) / compactThreshold));
   const empty = 10 - filled;
 
