@@ -7,6 +7,34 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
+// ── --invalidate-cache mode (PostToolUse hook) ──
+if (process.argv.includes('--invalidate-cache')) {
+  try {
+    const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+    const cmd = (input.tool_input && input.tool_input.command) || '';
+    if (!/gh\s+pr\s+(create|merge|close)/.test(cmd)) process.exit(0);
+
+    const homeDir = os.homedir();
+    const cacheDir = path.join(homeDir, '.claude', 'cache');
+    if (!fs.existsSync(cacheDir)) process.exit(0);
+
+    const branch = execSync('git symbolic-ref --short HEAD', {
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const toplevel = execSync('git rev-parse --show-toplevel', {
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+    const repoId = crypto.createHash('md5').update(toplevel).digest('hex').slice(0, 8);
+    const cacheFile = path.join(cacheDir, `pr-${repoId}-${branch.replace(/\//g, '_')}.json`);
+    fs.rmSync(cacheFile, { force: true });
+  } catch {}
+  process.exit(0);
+}
+
 // Read JSON from stdin
 let data;
 try {

@@ -74,6 +74,28 @@ Override TTL with environment variable:
 }
 ```
 
+### Auto-invalidation hook
+
+Add a PostToolUse hook to auto-invalidate the cache when `gh pr create/merge/close` is executed:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx -y sai-kaneko-31/cc-statusline --invalidate-cache"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 ## Acknowledgments
 
 Inspired by [him0/claude-code-statusline](https://github.com/him0/claude-code-statusline) and [this article](https://zenn.dev/him0/articles/f1215cea2c715e).
