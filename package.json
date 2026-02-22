@@ -1,0 +1,18 @@
+{
+  "name": "cc-statusline",
+  "version": "1.0.0",
+  "description": "Claude Code statusline with Nerd Font icons, OSC8 PR links, and HP bar",
+  "main": "index.js",
+  "bin": {
+    "cc-statusline": "./index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sai-kaneko-31/cc-statusline.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "statusline"
+  ]
+}
