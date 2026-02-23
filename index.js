@@ -118,6 +118,7 @@ const costUsd = data.cost && data.cost.total_cost_usd;
 const durationMs = data.cost && data.cost.total_duration_ms;
 const linesAdded = data.cost && data.cost.total_lines_added;
 const linesRemoved = data.cost && data.cost.total_lines_removed;
+const sessionId = data.session_id || '';
 
 let colleagueInstruction = null;
 const colleagueIdx = process.argv.indexOf('--colleague-instruction');
@@ -351,7 +352,7 @@ let cachedComment = null;
 if (colleagueInstruction !== null) {
   const commentToplevel = exec(`git -C "${cwd}" rev-parse --show-toplevel`);
   const commentCacheKey = commentToplevel
-    ? crypto.createHash('md5').update(commentToplevel).digest('hex').slice(0, 8)
+    ? crypto.createHash('md5').update(commentToplevel + sessionId).digest('hex').slice(0, 8)
     : 'default';
   const commentCacheFile = path.join(homeDir, '.claude', 'cache', `statusline-comment-${commentCacheKey}.json`);
   const commentTtl = parseInt(process.env.STATUSLINE_COMMENT_TTL_MS) || 300000;

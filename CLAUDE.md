@@ -44,6 +44,7 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 | `cost.total_duration_ms` | number | No | Session total duration in ms (used in colleague comments) |
 | `cost.total_lines_added` | number | No | Total lines added in session (used in colleague comments) |
 | `cost.total_lines_removed` | number | No | Total lines removed in session (used in colleague comments) |
+| `session_id` | string | No | Session ID (used in comment cache key for per-session uniqueness) |
 
 ## Key Implementation Details
 
@@ -53,7 +54,7 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 - OSC8 hyperlinks use BEL (`\x07`) terminator
 - All git commands have `timeout: 3000ms`; `gh` commands use `timeout 2`
 - `--invalidate-cache` mode: deletes cache file when `gh pr create/merge/close` is detected in PostToolUse hook input
-- Comment cache at `~/.claude/cache/statusline-comment-<repoHash>.json` (TTL: 5 min, override with `STATUSLINE_COMMENT_TTL_MS`)
+- Comment cache at `~/.claude/cache/statusline-comment-<hash>.json` where hash = MD5(toplevel + session_id)[:8] (TTL: 5 min, override with `STATUSLINE_COMMENT_TTL_MS`)
 - Comment cache format: `{ comment: "text", history: ["prev1", "prev2", ...] }` — history keeps last N comments for dedup
 - Comment prompt: instruction first (persona adherence), dynamic context (empty fields omitted), changedFiles max 5
 - Comment prompt priority: changed files > branch > time > duration/cost; HP only shown if <15%
