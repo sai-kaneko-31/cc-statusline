@@ -163,9 +163,13 @@ describe('colleague comments', () => {
     context_window: { used_percentage: 30 },
   };
 
-  it('--generate-comment calls claude CLI and exits cleanly', { skip: !hasClaudeAuth && 'claude CLI not installed or not authenticated' }, () => {
+  it('--generate-comment calls claude CLI and exits cleanly', { skip: !hasClaudeAuth && 'claude CLI not installed or not authenticated', timeout: 30000 }, () => {
     const ctx = JSON.stringify({ branch: 'main', changedFiles: [], time: '2026/01/01 00:00:00', hpRemaining: 55, instruction: 'test', cacheKey: 'test' });
-    const result = runWithArgs('', ['--generate-comment', ctx]);
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    delete env.CLAUDE_CODE_ENTRYPOINT;
+    delete env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS;
+    const result = runWithArgs('', ['--generate-comment', ctx], { timeout: 30000, env });
     assert.equal(result.exitCode, 0);
   });
 
