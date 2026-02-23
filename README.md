@@ -136,6 +136,28 @@ Comments are cached at `~/.claude/cache/statusline-comment-<repo-hash>.json` (5 
 | `STATUSLINE_COMMENT_MODEL` | `haiku` | Model for comment generation |
 | `STATUSLINE_COMMENT_TTL_MS` | `300000` (5 min) | Comment cache TTL |
 | `STATUSLINE_COMMENT_HISTORY_SIZE` | `5` | Previous comments tracked for dedup |
+| `STATUSLINE_THEME` | `default` | Color theme: `default`, `light`, `minimal`, `dracula` |
+
+## Themes
+
+Switch color schemes via `STATUSLINE_THEME` environment variable:
+
+| Theme | Description |
+|-------|-------------|
+| `default` | Bold ANSI colors (original) |
+| `light` | Non-bold colors + bright black dim — optimized for light backgrounds |
+| `minimal` | White/gray with red danger bar only |
+| `dracula` | 256-color palette (purple model, orange warning, muted dim) |
+
+```json
+{
+  "env": {
+    "STATUSLINE_THEME": "dracula"
+  }
+}
+```
+
+Unknown theme names fall back to `default`.
 
 ## Acknowledgments
 

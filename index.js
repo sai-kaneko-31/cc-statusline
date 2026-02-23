@@ -128,13 +128,62 @@ if (colleagueIdx !== -1) {
 
 // ANSI color codes
 const RESET = '\x1b[0m';
-const BOLD_CYAN = '\x1b[1;36m';
-const BOLD_PURPLE = '\x1b[1;35m';
-const BOLD_YELLOW = '\x1b[1;33m';
-const BOLD_GREEN = '\x1b[1;32m';
-const BOLD_RED = '\x1b[1;31m';
-const DIM_WHITE = '\x1b[2;37m';
-const BOLD_BLUE = '\x1b[1;34m';
+const THEMES = {
+  default: {
+    folder: '\x1b[1;36m',
+    branch: '\x1b[1;35m',
+    aheadBehind: '\x1b[1;33m',
+    added: '\x1b[1;32m',
+    deleted: '\x1b[1;31m',
+    model: '\x1b[1;34m',
+    barSafe: '\x1b[1;32m',
+    barWarning: '\x1b[1;33m',
+    barDanger: '\x1b[1;31m',
+    dim: '\x1b[2;37m',
+    clock: '\x1b[37m',
+  },
+  light: {
+    folder: '\x1b[36m',
+    branch: '\x1b[35m',
+    aheadBehind: '\x1b[33m',
+    added: '\x1b[32m',
+    deleted: '\x1b[31m',
+    model: '\x1b[34m',
+    barSafe: '\x1b[32m',
+    barWarning: '\x1b[33m',
+    barDanger: '\x1b[31m',
+    dim: '\x1b[90m',
+    clock: '\x1b[37m',
+  },
+  minimal: {
+    folder: '\x1b[37m',
+    branch: '\x1b[37m',
+    aheadBehind: '\x1b[37m',
+    added: '\x1b[37m',
+    deleted: '\x1b[37m',
+    model: '\x1b[37m',
+    barSafe: '\x1b[37m',
+    barWarning: '\x1b[37m',
+    barDanger: '\x1b[1;31m',
+    dim: '\x1b[90m',
+    clock: '\x1b[37m',
+  },
+  dracula: {
+    folder: '\x1b[1;36m',
+    branch: '\x1b[1;35m',
+    aheadBehind: '\x1b[1;33m',
+    added: '\x1b[1;32m',
+    deleted: '\x1b[1;31m',
+    model: '\x1b[38;5;141m',
+    barSafe: '\x1b[1;32m',
+    barWarning: '\x1b[38;5;215m',
+    barDanger: '\x1b[1;31m',
+    dim: '\x1b[38;5;61m',
+    clock: '\x1b[37m',
+  },
+};
+const themeName = (process.env.STATUSLINE_THEME || 'default').toLowerCase();
+const T = THEMES[themeName] || THEMES.default;
 
 // Nerd Font icons
 const ICON_FOLDER = '\uF07C';   //  folder-open
@@ -284,31 +333,31 @@ const ctxVisibleLen = 15; // [██████████]XX%
 const col2Len = Math.max(branchVisible.length, ctxVisibleLen);
 
 // ── Line 1: path + branch+PR + git stats ──
-let line1 = `${BOLD_CYAN}${ICON_FOLDER} ${padEnd(displayDir, col1Len)}${RESET}`;
+let line1 = `${T.folder}${ICON_FOLDER} ${padEnd(displayDir, col1Len)}${RESET}`;
 
 if (gitBranch) {
   const branchPad = col2Len - branchVisible.length;
   const padding = branchPad > 0 ? ' '.repeat(branchPad) : '';
   if (prNum) {
     // Branch name + OSC8 clickable PR link
-    line1 += `${COL_SEP}${BOLD_PURPLE}${ICON_BRANCH} ${gitBranch}${RESET} ${DIM_WHITE}${osc8(`#${prNum}`, prUrl)}${RESET}${padding}`;
+    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${gitBranch}${RESET} ${T.dim}${osc8(`#${prNum}`, prUrl)}${RESET}${padding}`;
   } else {
-    line1 += `${COL_SEP}${BOLD_PURPLE}${ICON_BRANCH} ${padEnd(gitBranch, col2Len)}${RESET}`;
+    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${padEnd(gitBranch, col2Len)}${RESET}`;
   }
 }
 
 if (gitAheadBehind) {
-  line1 += `${COL_SEP}${BOLD_YELLOW}${ICON_ROCKET} ${gitAheadBehind}${RESET}`;
+  line1 += `${COL_SEP}${T.aheadBehind}${ICON_ROCKET} ${gitAheadBehind}${RESET}`;
 } else {
-  line1 += `${COL_SEP}${DIM_WHITE}${ICON_ROCKET} -${RESET}`;
+  line1 += `${COL_SEP}${T.dim}${ICON_ROCKET} -${RESET}`;
 }
 
 const addedStr = gitAdded || '0';
 const deletedStr = gitDeleted || '0';
 if (parseInt(addedStr) > 0 || parseInt(deletedStr) > 0) {
-  line1 += ` ${BOLD_GREEN}+${addedStr}${RESET}/${BOLD_RED}-${deletedStr}${RESET}`;
+  line1 += ` ${T.added}+${addedStr}${RESET}/${T.deleted}-${deletedStr}${RESET}`;
 } else {
-  line1 += ` ${DIM_WHITE}-/-${RESET}`;
+  line1 += ` ${T.dim}-/-${RESET}`;
 }
 
 // ── Line 2: model + HP bar + time ──
@@ -318,7 +367,7 @@ else if (model.includes('Sonnet')) modelIcon = ICON_SONNET;
 else if (model.includes('Haiku')) modelIcon = ICON_HAIKU;
 else modelIcon = ICON_SONNET;
 
-let line2 = `${BOLD_BLUE}${modelIcon} ${padEnd(model, col1Len)}${RESET}`;
+let line2 = `${T.model}${modelIcon} ${padEnd(model, col1Len)}${RESET}`;
 
 let remaining = null;
 if (usedPct != null && usedPct !== '') {
@@ -332,20 +381,20 @@ if (usedPct != null && usedPct !== '') {
   const barEmpty = empty > 0 ? '░'.repeat(empty) : '';
 
   let barColor;
-  if (remaining <= 15) barColor = BOLD_RED;
-  else if (remaining <= 40) barColor = BOLD_YELLOW;
-  else barColor = BOLD_GREEN;
+  if (remaining <= 15) barColor = T.barDanger;
+  else if (remaining <= 40) barColor = T.barWarning;
+  else barColor = T.barSafe;
 
   const ctxTextLen = 10 + 2 + String(remaining).length + 1; // bars + [] + digits + %
   const ctxPad = col2Len - ctxTextLen;
   const ctxPadding = ctxPad > 0 ? ' '.repeat(ctxPad) : '';
 
-  line2 += `${COL_SEP}${barColor}${ICON_HEART} [${barFilled}${DIM_WHITE}${barEmpty}${barColor}]${remaining}%${ctxPadding}${RESET}`;
+  line2 += `${COL_SEP}${barColor}${ICON_HEART} [${barFilled}${T.dim}${barEmpty}${barColor}]${remaining}%${ctxPadding}${RESET}`;
 } else {
-  line2 += `${COL_SEP}${DIM_WHITE}${ICON_HEART} ${' '.repeat(col2Len)}${RESET}`;
+  line2 += `${COL_SEP}${T.dim}${ICON_HEART} ${' '.repeat(col2Len)}${RESET}`;
 }
 
-line2 += `${COL_SEP}\x1b[37m${ICON_CLOCK} ${currentTime}${RESET}`;
+line2 += `${COL_SEP}${T.clock}${ICON_CLOCK} ${currentTime}${RESET}`;
 
 // ── Colleague comment (optional 3rd line) ──
 let cachedComment = null;
@@ -394,6 +443,6 @@ if (colleagueInstruction !== null) {
 
 let output = `${line1}\n${line2}`;
 if (cachedComment) {
-  output += `\n${DIM_WHITE}${ICON_COMMENT} ${cachedComment}${RESET}`;
+  output += `\n${T.dim}${ICON_COMMENT} ${cachedComment}${RESET}`;
 }
 process.stdout.write(output);
