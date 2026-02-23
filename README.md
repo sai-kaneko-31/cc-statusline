@@ -16,6 +16,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 | HP bar | Context window remaining until auto-compact (85%), color-coded |
 | Git stats | Branch, ahead/behind, insertions/deletions |
 | 3-column alignment | Path/model, branch+PR/HP bar, stats/time |
+| Colleague comments | Optional LLM-generated contextual comments (3rd line) |
 
 ## Requirements
 
@@ -95,6 +96,46 @@ Add a PostToolUse hook to auto-invalidate the cache when `gh pr create/merge/clo
   }
 }
 ```
+
+## Colleague comments (optional)
+
+LLM-generated contextual comments displayed as an optional 3rd line. Requires [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`claude`) installed and authenticated.
+
+Enable by adding `--colleague-instruction` to the command:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y sai-kaneko-31/cc-statusline --colleague-instruction 'Your persona instruction here'"
+  }
+}
+```
+
+Example — an enthusiastic お嬢様 colleague:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y sai-kaneko-31/cc-statusline --colleague-instruction 'テンションが高いお嬢様。'"
+  }
+}
+```
+
+```
+ ~/git/my-project   main   +121/-43
+ Opus 4.6            [████████░░]53%    2026/02/23 14:30:00
+ あら、README.mdをお仕上げですか～！本当にお見事な整理力ですわね～！
+```
+
+Comments are cached at `~/.claude/cache/statusline-comment-<repo-hash>.json` (5 min TTL) and generated in the background via `claude -p`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STATUSLINE_COMMENT_MODEL` | `haiku` | Model for comment generation |
+| `STATUSLINE_COMMENT_TTL_MS` | `300000` (5 min) | Comment cache TTL |
+| `STATUSLINE_COMMENT_HISTORY_SIZE` | `5` | Previous comments tracked for dedup |
 
 ## Acknowledgments
 

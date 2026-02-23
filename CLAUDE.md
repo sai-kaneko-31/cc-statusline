@@ -25,6 +25,9 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 
 # Test with colleague comment (requires cached comment)
 echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_window\":{\"used_percentage\":70}}" | node index.js --colleague-instruction 'Be friendly'
+
+# Manual test of claude -p (must unset env vars to avoid recursion inside Claude Code)
+env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TASKS claude -p 'test prompt' --model haiku
 ```
 
 ## Testing
@@ -32,6 +35,7 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 - Framework: `node:test` (Node.js built-in)
 - Test file: `test/statusline.test.js`
 - CI: GitHub Actions with Node.js 18/20/22 matrix
+- `node --test` output may not display in Claude Code Bash tool; redirect to file (`1>/tmp/test.txt 2>&1`) then Read
 
 ## stdin JSON Fields
 
@@ -87,4 +91,4 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 - If `claude` CLI is not installed or not authenticated, colleague comments are silently skipped
 - The `--generate-comment` background process must unset `CLAUDECODE` and related env vars to avoid recursion
 - Tests use `process.execPath` (not `'node'`) for portability; `claude` CLI tests are skipped when not authenticated
-- GitHub repo rules require PRs to merge into main (direct push rejected)
+- GitHub repo rules require PRs to merge into main (direct push rejected); merge commits disabled, use `gh pr merge --squash`
