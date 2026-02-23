@@ -235,3 +235,30 @@ describe('colleague comments', () => {
     }
   });
 });
+
+describe('themes', () => {
+  const stdinData = {
+    cwd: '/tmp',
+    model: { display_name: 'Opus 4.6' },
+    context_window: { used_percentage: 30 },
+  };
+
+  it('STATUSLINE_THEME=light uses non-bold colors', () => {
+    const result = runWithArgs(stdinData, [], { env: { ...process.env, STATUSLINE_THEME: 'light' } });
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('\x1b[36m'), 'should contain non-bold cyan for folder');
+    assert.ok(!result.stdout.includes('\x1b[1;36m'), 'should not contain bold cyan');
+  });
+
+  it('unknown theme name falls back to default', () => {
+    const result = runWithArgs(stdinData, [], { env: { ...process.env, STATUSLINE_THEME: 'nonexistent' } });
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('\x1b[1;36m'), 'should contain bold cyan (default folder color)');
+  });
+
+  it('STATUSLINE_THEME=dracula uses 256-color codes', () => {
+    const result = runWithArgs(stdinData, [], { env: { ...process.env, STATUSLINE_THEME: 'dracula' } });
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('\x1b[38;5;141m'), 'should contain dracula 256-color purple for model');
+  });
+});

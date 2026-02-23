@@ -75,6 +75,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 | `STATUSLINE_COMMENT_MODEL` | `haiku` | Model alias for `claude -p --model` |
 | `STATUSLINE_COMMENT_TTL_MS` | `300000` (5 min) | Colleague comment cache TTL |
 | `STATUSLINE_COMMENT_HISTORY_SIZE` | `5` | Number of previous comments to track for dedup |
+| `STATUSLINE_THEME` | `default` | Color theme: `default`, `light`, `minimal`, `dracula` |
 
 ## Code Style
 
