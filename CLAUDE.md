@@ -4,7 +4,7 @@ Claude Code statusline command (single-file Node.js CLI).
 
 ## Architecture
 
-- Entry point: `index.js` (~390 lines, zero dependencies)
+- Entry point: `index.js` (~400 lines, zero dependencies)
 - Reads JSON from stdin, outputs ANSI-colored 2-line status to stdout
 - Three modes: statusline (default), `--invalidate-cache` (PostToolUse hook), and `--generate-comment` (background LLM comment generation)
 - Modules: child_process, fs, path, os, crypto (all Node.js built-in)
@@ -21,6 +21,9 @@ echo '{"cwd":"/tmp","model":{"display_name":"Opus 4.6"},"context_window":{"used_
 
 # Test inside a git repo (shows branch & PR info)
 echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_window\":{\"used_percentage\":70}}" | node index.js
+
+# Test with colleague comment (requires cached comment)
+echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_window\":{\"used_percentage\":70}}" | node index.js --colleague-instruction 'Be friendly'
 ```
 
 ## Testing
@@ -51,7 +54,9 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 - `--invalidate-cache` mode: deletes cache file when `gh pr create/merge/close` is detected in PostToolUse hook input
 - Comment cache at `~/.claude/cache/statusline-comment-<repoHash>.json` (TTL: 5 min, override with `STATUSLINE_COMMENT_TTL_MS`)
 - Comment cache format: `{ comment: "text", history: ["prev1", "prev2", ...] }` — history keeps last N comments for dedup
-- Comment prompt priority: changed files > branch name > time of day > session duration/cost; HP only if <15%
+- Comment prompt: instruction first (persona adherence), dynamic context (empty fields omitted), changedFiles max 5
+- Comment prompt priority: changed files > branch > time > duration/cost; HP only shown if <15%
+- Comment dedup uses positive instruction ("say something different") instead of negative ("DO NOT repeat")
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model>` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
