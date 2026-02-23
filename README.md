@@ -1,6 +1,6 @@
 # cc-statusline
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline command with Nerd Font icons, clickable PR links, and a context window HP bar.
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline command with Nerd Font icons, clickable PR links, and a context window bar.
 
 ```
  ~/git/my-project   feature/auth #42   ↑2 +15/-3
@@ -13,9 +13,9 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 |---------|-------------|
 | Nerd Font icons | Model-specific icons (Opus , Sonnet , Haiku ) |
 | OSC8 PR links | Ctrl+Click to open PR in browser (BEL terminator) |
-| HP bar | Context window remaining until auto-compact (85%), color-coded |
+| Context window bar | Context window remaining until auto-compact (85%), color-coded |
 | Git stats | Branch, ahead/behind, insertions/deletions |
-| 3-column alignment | Path/model, branch+PR/HP bar, stats/time |
+| 3-column alignment | Path/model, branch+PR/context window bar, stats/time |
 | Colleague comments | Optional LLM-generated contextual comments (3rd line) |
 
 ## Requirements
@@ -50,10 +50,10 @@ Line 2:  <model>         <heart> [<bar>]<remaining>%              <clock> <time>
 | Column | Line 1 | Line 2 |
 |--------|--------|--------|
 | col1 | Working directory (`~` substituted) | Model name with icon |
-| col2 | Branch + clickable PR number | HP bar (remaining context %) |
+| col2 | Branch + clickable PR number | Context window bar (remaining %) |
 | col3 | Ahead/behind + diff stats | Current time |
 
-### HP bar color
+### Context window bar color
 
 | Remaining | Color | Meaning |
 |-----------|-------|---------|
