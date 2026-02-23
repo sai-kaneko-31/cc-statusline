@@ -53,7 +53,7 @@ if (generateCommentIdx !== -1) {
       `You are a colleague sitting next to a developer. ${instruction || 'Be friendly and supportive.'}`,
       `Context: changed files=[${filesStr}], branch="${branch || 'unknown'}", time="${time || ''}", HP remaining=${hpRemaining != null ? hpRemaining + '%' : 'unknown'}, session cost=$${costUsd != null ? costUsd.toFixed(2) : '?'}, session duration=${durationMin != null ? durationMin + 'min' : '?'}, lines +${linesAdded || 0}/-${linesRemoved || 0}.${prevStr}`,
       'Priority: comment on changed files > branch name > time of day > session duration/cost. Only mention HP/context size if critically low (<15%).',
-      'Give ONE comment (max ~60 chars, about one line width) that is natural, context-aware, and DIFFERENT from previous comments.',
+      'Give ONE comment (2-3 short sentences, 40-80 chars total) that is natural, context-aware, and DIFFERENT from previous comments.',
       'Output ONLY the comment text. No quotes, no prefix.',
     ].join('\n');
 
