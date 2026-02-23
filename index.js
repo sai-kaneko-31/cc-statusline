@@ -48,7 +48,7 @@ if (generateCommentIdx !== -1) {
     const filesStr = files.length > 0 ? files.join(', ') : '';
     const durationMin = durationMs ? Math.floor(durationMs / 60000) : null;
     const prevStr = (previousComments || []).length > 0
-      ? `\nPrevious comments: ${previousComments.map((c) => `"${c}"`).join(', ')}`
+      ? `\nPrevious comments (say something different): ${previousComments.map((c) => `"${c}"`).join(', ')}`
       : '';
 
     // Build context fields, omitting empty/unknown values
