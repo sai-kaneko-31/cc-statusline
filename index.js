@@ -12,7 +12,7 @@ if (process.argv.includes('--invalidate-cache')) {
   try {
     const input = JSON.parse(fs.readFileSync(0, 'utf8'));
     const cmd = (input.tool_input && input.tool_input.command) || '';
-    if (!/gh\s+pr\s+(create|merge|close)/.test(cmd)) process.exit(0);
+    if (!/gh\s+pr\s+(create|merge|close|review)/.test(cmd)) process.exit(0);
 
     const homeDir = os.homedir();
     const cacheDir = path.join(homeDir, '.claude', 'cache');
@@ -195,6 +195,9 @@ const ICON_HAIKU = '\uF0F4';    //  coffee
 const ICON_HEART = '\uF004';    //  heart
 const ICON_CLOCK = '\uF017';    //  clock
 const ICON_COMMENT = '\uF075';  //  comment
+const ICON_REVIEW_APPROVED = '\uF00C';   //  check
+const ICON_REVIEW_CHANGES = '\uF00D';    //  close
+const ICON_REVIEW_REQUIRED = '\uF10C';   //  circle-o
 
 const COL_SEP = '  ';
 
@@ -234,6 +237,7 @@ let gitAdded = '';
 let gitDeleted = '';
 let prNum = '';
 let prUrl = '';
+let prReviewDecision = '';
 
 if (exec(`git -C "${cwd}" rev-parse --git-dir`)) {
   gitBranch =
@@ -293,14 +297,14 @@ if (exec(`git -C "${cwd}" rev-parse --git-dir`)) {
     if (cached === null) {
       const remoteUrl = exec(`git -C "${cwd}" remote get-url origin`);
       const prJson = exec(
-        `timeout 2 gh pr view "${gitBranch}" --repo "${remoteUrl}" --json number,url,state`
+        `timeout 2 gh pr view "${gitBranch}" --repo "${remoteUrl}" --json number,url,state,reviewDecision`
       );
       if (prJson) {
         try {
           const pr = JSON.parse(prJson);
           cached =
             pr.state === 'OPEN'
-              ? { number: pr.number, url: pr.url }
+              ? { number: pr.number, url: pr.url, reviewDecision: pr.reviewDecision || '' }
               : { none: true };
         } catch {
           cached = { none: true };
@@ -316,6 +320,7 @@ if (exec(`git -C "${cwd}" rev-parse --git-dir`)) {
     if (cached && !cached.none) {
       prNum = String(cached.number);
       prUrl = cached.url;
+      prReviewDecision = cached.reviewDecision || '';
     }
   }
 }
@@ -327,8 +332,15 @@ const currentTime = `${now.getFullYear()}/${p2(now.getMonth() + 1)}/${p2(now.get
 
 // ── Column widths ──
 const col1Len = Math.max(displayDir.length, model.length);
+const REVIEW_MAP = {
+  APPROVED: { icon: ICON_REVIEW_APPROVED, color: T.added },
+  CHANGES_REQUESTED: { icon: ICON_REVIEW_CHANGES, color: T.deleted },
+  REVIEW_REQUIRED: { icon: ICON_REVIEW_REQUIRED, color: T.aheadBehind },
+};
+const reviewInfo = REVIEW_MAP[prReviewDecision] || null;
 const prText = prNum ? ` #${prNum}` : '';
-const branchVisible = gitBranch + prText;
+const reviewText = reviewInfo ? ` ${reviewInfo.icon}` : '';
+const branchVisible = gitBranch + prText + reviewText;
 const ctxVisibleLen = 15; // [██████████]XX%
 const col2Len = Math.max(branchVisible.length, ctxVisibleLen);
 
@@ -339,8 +351,9 @@ if (gitBranch) {
   const branchPad = col2Len - branchVisible.length;
   const padding = branchPad > 0 ? ' '.repeat(branchPad) : '';
   if (prNum) {
-    // Branch name + OSC8 clickable PR link
-    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${gitBranch}${RESET} ${T.dim}${osc8(`#${prNum}`, prUrl)}${RESET}${padding}`;
+    // Branch name + OSC8 clickable PR link + review status
+    const reviewStr = reviewInfo ? ` ${reviewInfo.color}${reviewInfo.icon}${RESET}` : '';
+    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${gitBranch}${RESET} ${T.dim}${osc8(`#${prNum}`, prUrl)}${RESET}${reviewStr}${padding}`;
   } else {
     line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${padEnd(gitBranch, col2Len)}${RESET}`;
   }

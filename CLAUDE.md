@@ -57,7 +57,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - Context window bar converts used_percentage to "remaining until 85% (auto-compact threshold)"
 - OSC8 hyperlinks use BEL (`\x07`) terminator
 - All git commands have `timeout: 3000ms`; `gh` commands use `timeout 2`
-- `--invalidate-cache` mode: deletes cache file when `gh pr create/merge/close` is detected in PostToolUse hook input
+- `--invalidate-cache` mode: deletes cache file when `gh pr create/merge/close/review` is detected in PostToolUse hook input
 - Comment cache at `~/.claude/cache/statusline-comment-<hash>.json` where hash = MD5(toplevel + session_id)[:8] (TTL: 5 min, override with `STATUSLINE_COMMENT_TTL_MS`)
 - Comment cache format: `{ comment: "text", history: ["prev1", "prev2", ...] }` — history keeps last N comments for dedup
 - Comment prompt: instruction first (persona adherence), dynamic context (empty fields omitted), changedFiles max 5
@@ -66,6 +66,8 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model>` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
+- PR review status: `reviewDecision` from `gh pr view` mapped to icons (APPROVED→, CHANGES_REQUESTED→, REVIEW_REQUIRED→)
+- PR cache format: `{ number, url, reviewDecision }` — old caches without `reviewDecision` fall back to no icon
 
 ## Environment Variables
 
