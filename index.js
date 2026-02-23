@@ -41,14 +41,19 @@ if (generateCommentIdx !== -1) {
   try {
     const contextJson = process.argv[generateCommentIdx + 1] || '{}';
     const ctx = JSON.parse(contextJson);
-    const { branch, changedFiles, time, hpRemaining, instruction } = ctx;
+    const { branch, changedFiles, time, hpRemaining, instruction, costUsd, durationMs, linesAdded, linesRemoved, previousComments } = ctx;
     const commentModel = process.env.STATUSLINE_COMMENT_MODEL || 'haiku';
 
     const filesStr = (changedFiles || []).join(', ');
+    const durationMin = durationMs ? Math.floor(durationMs / 60000) : null;
+    const prevStr = (previousComments || []).length > 0
+      ? `\nPrevious comments (DO NOT repeat these): ${previousComments.map((c) => `"${c}"`).join(', ')}`
+      : '';
     const prompt = [
       `You are a colleague sitting next to a developer. ${instruction || 'Be friendly and supportive.'}`,
-      `Context: branch="${branch || 'unknown'}", changed files=[${filesStr}], time="${time || ''}", HP remaining=${hpRemaining != null ? hpRemaining + '%' : 'unknown'}.`,
-      'Give ONE short comment (max ~40 chars) that is natural and context-aware.',
+      `Context: changed files=[${filesStr}], branch="${branch || 'unknown'}", time="${time || ''}", HP remaining=${hpRemaining != null ? hpRemaining + '%' : 'unknown'}, session cost=$${costUsd != null ? costUsd.toFixed(2) : '?'}, session duration=${durationMin != null ? durationMin + 'min' : '?'}, lines +${linesAdded || 0}/-${linesRemoved || 0}.${prevStr}`,
+      'Priority: comment on changed files > branch name > time of day > session duration/cost. Only mention HP/context size if critically low (<15%).',
+      'Give ONE short comment (max ~40 chars) that is natural, context-aware, and DIFFERENT from previous comments.',
       'Output ONLY the comment text. No quotes, no prefix.',
     ].join('\n');
 
@@ -71,13 +76,14 @@ if (generateCommentIdx !== -1) {
       const homeDir = os.homedir();
       const cacheDir = path.join(homeDir, '.claude', 'cache');
       const cacheKey = ctx.cacheKey || 'default';
+      const cacheFile = path.join(cacheDir, `statusline-comment-${cacheKey}.json`);
+      const maxHistory = parseInt(process.env.STATUSLINE_COMMENT_HISTORY_SIZE) || 5;
       try {
         fs.mkdirSync(cacheDir, { recursive: true });
       } catch {}
-      fs.writeFileSync(
-        path.join(cacheDir, `statusline-comment-${cacheKey}.json`),
-        JSON.stringify({ comment: result })
-      );
+      // Append to history, keep last N
+      const history = [...(previousComments || []), result].slice(-maxHistory);
+      fs.writeFileSync(cacheFile, JSON.stringify({ comment: result, history }));
     }
   } catch {}
   process.exit(0);
@@ -88,6 +94,7 @@ let data;
 try {
   const input = fs.readFileSync(0, 'utf8');
   data = JSON.parse(input);
+
 } catch {
   process.exit(0);
 }
@@ -95,6 +102,10 @@ try {
 const cwd = data.cwd || (data.workspace && data.workspace.current_dir) || '';
 const model = (data.model && data.model.display_name) || '';
 const usedPct = data.context_window && data.context_window.used_percentage;
+const costUsd = data.cost && data.cost.total_cost_usd;
+const durationMs = data.cost && data.cost.total_duration_ms;
+const linesAdded = data.cost && data.cost.total_lines_added;
+const linesRemoved = data.cost && data.cost.total_lines_removed;
 
 let colleagueInstruction = null;
 const colleagueIdx = process.argv.indexOf('--colleague-instruction');
@@ -321,7 +332,7 @@ if (usedPct != null && usedPct !== '') {
   line2 += `${COL_SEP}${DIM_WHITE}${ICON_HEART} ${' '.repeat(col2Len)}${RESET}`;
 }
 
-line2 += `${COL_SEP}${DIM_WHITE}${ICON_CLOCK} ${currentTime}${RESET}`;
+line2 += `${COL_SEP}\x1b[37m${ICON_CLOCK} ${currentTime}${RESET}`;
 
 // ── Colleague comment (optional 3rd line) ──
 let cachedComment = null;
@@ -334,13 +345,13 @@ if (colleagueInstruction !== null) {
   const commentTtl = parseInt(process.env.STATUSLINE_COMMENT_TTL_MS) || 300000;
 
   // Try to read cached comment
+  let commentHistory = [];
   try {
     const stat = fs.statSync(commentCacheFile);
-    if (Date.now() - stat.mtimeMs < commentTtl) {
-      const commentData = JSON.parse(fs.readFileSync(commentCacheFile, 'utf8'));
-      if (commentData.comment) {
-        cachedComment = commentData.comment;
-      }
+    const commentData = JSON.parse(fs.readFileSync(commentCacheFile, 'utf8'));
+    commentHistory = commentData.history || [];
+    if (Date.now() - stat.mtimeMs < commentTtl && commentData.comment) {
+      cachedComment = commentData.comment;
     }
   } catch {}
 
@@ -352,8 +363,13 @@ if (colleagueInstruction !== null) {
       changedFiles: changedFiles ? changedFiles.split('\n').slice(0, 20) : [],
       time: currentTime,
       hpRemaining: remaining,
+      costUsd,
+      durationMs,
+      linesAdded,
+      linesRemoved,
       instruction: colleagueInstruction,
       cacheKey: commentCacheKey,
+      previousComments: commentHistory,
     };
     const child = spawn('node', [process.argv[1], '--generate-comment', JSON.stringify(contextObj)], {
       detached: true,
@@ -365,6 +381,6 @@ if (colleagueInstruction !== null) {
 
 let output = `${line1}\n${line2}`;
 if (cachedComment) {
-  output += `\n\x1b[3;37m${ICON_COMMENT} ${cachedComment}${RESET}`;
+  output += `\n${DIM_WHITE}${ICON_COMMENT} ${cachedComment}${RESET}`;
 }
 process.stdout.write(output);
