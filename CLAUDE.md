@@ -12,6 +12,7 @@ Claude Code statusline command (single-file Node.js CLI).
 ## Commands
 
 ```bash
+npm install           # Install dev dependencies (first time only)
 npm test              # Run tests (node:test)
 npm run lint          # ESLint check
 npm run lint:fix      # ESLint auto-fix
