@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-const { execSync } = require('child_process');
+const { execSync, execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -35,6 +35,54 @@ if (process.argv.includes('--invalidate-cache')) {
   process.exit(0);
 }
 
+// ── --generate-comment mode (background LLM comment generation) ──
+const generateCommentIdx = process.argv.indexOf('--generate-comment');
+if (generateCommentIdx !== -1) {
+  try {
+    const contextJson = process.argv[generateCommentIdx + 1] || '{}';
+    const ctx = JSON.parse(contextJson);
+    const { branch, changedFiles, time, hpRemaining, instruction } = ctx;
+    const commentModel = process.env.STATUSLINE_COMMENT_MODEL || 'haiku';
+
+    const filesStr = (changedFiles || []).join(', ');
+    const prompt = [
+      `You are a colleague sitting next to a developer. ${instruction || 'Be friendly and supportive.'}`,
+      `Context: branch="${branch || 'unknown'}", changed files=[${filesStr}], time="${time || ''}", HP remaining=${hpRemaining != null ? hpRemaining + '%' : 'unknown'}.`,
+      'Give ONE short comment (max ~40 chars) that is natural and context-aware.',
+      'Output ONLY the comment text. No quotes, no prefix.',
+    ].join('\n');
+
+    const env = { ...process.env };
+    delete env.CLAUDECODE;
+    delete env.CLAUDE_CODE_ENTRYPOINT;
+    delete env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS;
+
+    const raw = execFileSync('claude', ['-p', prompt, '--model', commentModel], {
+      encoding: 'utf8',
+      timeout: 30000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env,
+    }).trim();
+
+    // Sanitize: collapse to single line, truncate to 80 chars
+    const result = raw.replace(/[\r\n]+/g, ' ').slice(0, 80);
+
+    if (result) {
+      const homeDir = os.homedir();
+      const cacheDir = path.join(homeDir, '.claude', 'cache');
+      const cacheKey = ctx.cacheKey || 'default';
+      try {
+        fs.mkdirSync(cacheDir, { recursive: true });
+      } catch {}
+      fs.writeFileSync(
+        path.join(cacheDir, `statusline-comment-${cacheKey}.json`),
+        JSON.stringify({ comment: result })
+      );
+    }
+  } catch {}
+  process.exit(0);
+}
+
 // Read JSON from stdin
 let data;
 try {
@@ -47,6 +95,12 @@ try {
 const cwd = data.cwd || (data.workspace && data.workspace.current_dir) || '';
 const model = (data.model && data.model.display_name) || '';
 const usedPct = data.context_window && data.context_window.used_percentage;
+
+let colleagueInstruction = null;
+const colleagueIdx = process.argv.indexOf('--colleague-instruction');
+if (colleagueIdx !== -1) {
+  colleagueInstruction = process.argv[colleagueIdx + 1] || '';
+}
 
 // ANSI color codes
 const RESET = '\x1b[0m';
@@ -67,6 +121,7 @@ const ICON_SONNET = '\uF005';   //  star
 const ICON_HAIKU = '\uF0F4';    //  coffee
 const ICON_HEART = '\uF004';    //  heart
 const ICON_CLOCK = '\uF017';    //  clock
+const ICON_COMMENT = '\uF075';  //  comment
 
 const COL_SEP = '  ';
 
@@ -241,10 +296,11 @@ else modelIcon = ICON_SONNET;
 
 let line2 = `${BOLD_BLUE}${modelIcon} ${padEnd(model, col1Len)}${RESET}`;
 
+let remaining = null;
 if (usedPct != null && usedPct !== '') {
   const usedInt = Math.floor(parseFloat(usedPct));
   const compactThreshold = 85;
-  const remaining = Math.max(0, compactThreshold - usedInt);
+  remaining = Math.max(0, compactThreshold - usedInt);
   const filled = Math.min(10, Math.floor((remaining * 10) / compactThreshold));
   const empty = 10 - filled;
 
@@ -267,4 +323,48 @@ if (usedPct != null && usedPct !== '') {
 
 line2 += `${COL_SEP}${DIM_WHITE}${ICON_CLOCK} ${currentTime}${RESET}`;
 
-process.stdout.write(`${line1}\n${line2}`);
+// ── Colleague comment (optional 3rd line) ──
+let cachedComment = null;
+if (colleagueInstruction !== null) {
+  const commentToplevel = exec(`git -C "${cwd}" rev-parse --show-toplevel`);
+  const commentCacheKey = commentToplevel
+    ? crypto.createHash('md5').update(commentToplevel).digest('hex').slice(0, 8)
+    : 'default';
+  const commentCacheFile = path.join(homeDir, '.claude', 'cache', `statusline-comment-${commentCacheKey}.json`);
+  const commentTtl = parseInt(process.env.STATUSLINE_COMMENT_TTL_MS) || 300000;
+
+  // Try to read cached comment
+  try {
+    const stat = fs.statSync(commentCacheFile);
+    if (Date.now() - stat.mtimeMs < commentTtl) {
+      const commentData = JSON.parse(fs.readFileSync(commentCacheFile, 'utf8'));
+      if (commentData.comment) {
+        cachedComment = commentData.comment;
+      }
+    }
+  } catch {}
+
+  // If no fresh cache, spawn background generation
+  if (!cachedComment) {
+    const changedFiles = exec(`git -C "${cwd}" diff --name-only HEAD`);
+    const contextObj = {
+      branch: gitBranch,
+      changedFiles: changedFiles ? changedFiles.split('\n').slice(0, 20) : [],
+      time: currentTime,
+      hpRemaining: remaining,
+      instruction: colleagueInstruction,
+      cacheKey: commentCacheKey,
+    };
+    const child = spawn('node', [process.argv[1], '--generate-comment', JSON.stringify(contextObj)], {
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+  }
+}
+
+let output = `${line1}\n${line2}`;
+if (cachedComment) {
+  output += `\n${DIM_WHITE}${ICON_COMMENT} ${cachedComment}${RESET}`;
+}
+process.stdout.write(output);

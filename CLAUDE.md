@@ -4,9 +4,9 @@ Claude Code statusline command (single-file Node.js CLI).
 
 ## Architecture
 
-- Entry point: `index.js` (271 lines, zero dependencies)
+- Entry point: `index.js` (370 lines, zero dependencies)
 - Reads JSON from stdin, outputs ANSI-colored 2-line status to stdout
-- Two modes: statusline (default) and `--invalidate-cache` (PostToolUse hook)
+- Three modes: statusline (default), `--invalidate-cache` (PostToolUse hook), and `--generate-comment` (background LLM comment generation)
 - Modules: child_process, fs, path, os, crypto (all Node.js built-in)
 
 ## Commands
@@ -45,6 +45,18 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 - OSC8 hyperlinks use BEL (`\x07`) terminator
 - All git commands have `timeout: 3000ms`; `gh` commands use `timeout 2`
 - `--invalidate-cache` mode: deletes cache file when `gh pr create/merge/close` is detected in PostToolUse hook input
+- Comment cache at `~/.claude/cache/statusline-comment-<repoHash>.json` (TTL: 5 min, override with `STATUSLINE_COMMENT_TTL_MS`)
+- `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model>` to generate context-aware comments
+- `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
+- Requires `claude` CLI installed and authenticated; silently skips if unavailable
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STATUSLINE_PR_CACHE_TTL_MS` | `300000` (5 min) | PR info cache TTL |
+| `STATUSLINE_COMMENT_MODEL` | `haiku` | Model alias for `claude -p --model` |
+| `STATUSLINE_COMMENT_TTL_MS` | `300000` (5 min) | Colleague comment cache TTL |
 
 ## Code Style
 
@@ -58,3 +70,5 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 - Invalid JSON on stdin causes silent exit (`process.exit(0)`, no output)
 - Icons require a [Nerd Font](https://www.nerdfonts.com/) in the terminal
 - OSC8 hyperlinks don't work in some terminal emulators (Claude Code limitation: [anthropics/claude-code#26356](https://github.com/anthropics/claude-code/issues/26356)). Works in IDE integrated terminals (VS Code, Cursor), but may render as plain text in standalone emulators (Konsole, Windows Terminal)
+- If `claude` CLI is not installed or not authenticated, colleague comments are silently skipped
+- The `--generate-comment` background process must unset `CLAUDECODE` and related env vars to avoid recursion
