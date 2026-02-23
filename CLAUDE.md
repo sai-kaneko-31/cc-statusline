@@ -1,47 +1,60 @@
 # cc-statusline
 
-Claude Code の statusline コマンド (単一ファイル Node.js CLI)。
+Claude Code statusline command (single-file Node.js CLI).
 
 ## Architecture
 
-- エントリポイント: `index.js` (243行、依存パッケージなし)
-- stdin から JSON を読み取り、stdout に ANSI カラー付き 2行ステータスを出力
-- 使用モジュール: child_process, fs, path, os, crypto (すべて Node.js 標準)
+- Entry point: `index.js` (271 lines, zero dependencies)
+- Reads JSON from stdin, outputs ANSI-colored 2-line status to stdout
+- Two modes: statusline (default) and `--invalidate-cache` (PostToolUse hook)
+- Modules: child_process, fs, path, os, crypto (all Node.js built-in)
 
-## Development
+## Commands
 
 ```bash
-# ローカルテスト
+npm test              # Run tests (node:test)
+npm run lint          # ESLint check
+npm run lint:fix      # ESLint auto-fix
+
+# Manual test
 echo '{"cwd":"/tmp","model":{"display_name":"Opus 4.6"},"context_window":{"used_percentage":30}}' | node index.js
 
-# git リポジトリ内でテスト (ブランチ・PR情報が表示される)
+# Test inside a git repo (shows branch & PR info)
 echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_window\":{\"used_percentage\":70}}" | node index.js
 ```
+
+## Testing
+
+- Framework: `node:test` (Node.js built-in)
+- Test file: `test/statusline.test.js`
+- CI: GitHub Actions with Node.js 18/20/22 matrix
 
 ## stdin JSON Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `cwd` | string | Yes | 作業ディレクトリ (git 情報の取得元) |
-| `model.display_name` | string | No | モデル名 ("Opus"/"Sonnet"/"Haiku" でアイコン分岐) |
-| `context_window.used_percentage` | number | No | コンテキスト使用率 (HP bar 表示に使用) |
+| `cwd` | string | Yes | Working directory (used for git info) |
+| `model.display_name` | string | No | Model name (icon changes for "Opus"/"Sonnet"/"Haiku") |
+| `context_window.used_percentage` | number | No | Context usage percentage (used for HP bar) |
 
 ## Key Implementation Details
 
-- PR情報は `~/.claude/cache/pr-<repoHash>-<branch>.json` にキャッシュ (TTL: 5分、`STATUSLINE_PR_CACHE_TTL_MS` で上書き可)
-- repoHash は `git rev-parse --show-toplevel` の MD5 先頭8文字
-- HP bar は used_percentage を「85% (auto-compact閾値) までの残り」に変換
-- OSC8 ハイパーリンクは BEL (\x07) ターミネータ使用
-- 全 git コマンドに timeout: 3000ms、gh コマンドに `timeout 2` を設定
+- PR info cached at `~/.claude/cache/pr-<repoHash>-<branch>.json` (TTL: 5 min, override with `STATUSLINE_PR_CACHE_TTL_MS`)
+- repoHash is first 8 chars of MD5 of `git rev-parse --show-toplevel`
+- HP bar converts used_percentage to "remaining until 85% (auto-compact threshold)"
+- OSC8 hyperlinks use BEL (`\x07`) terminator
+- All git commands have `timeout: 3000ms`; `gh` commands use `timeout 2`
+- `--invalidate-cache` mode: deletes cache file when `gh pr create/merge/close` is detected in PostToolUse hook input
 
 ## Code Style
 
-- CommonJS (`require`)、セミコロンあり
-- 関数宣言 (`function`) 使用、アロー関数は変数代入時のみ
+- CommonJS (`require`), semicolons required
+- Function declarations (`function`); arrow functions only for variable assignments
+- ESLint config: `eslint.config.js` (flat config, `prefer-const`, `semi`)
 
 ## Gotchas
 
-- `gh` CLI 未インストール時は PR 情報が無視される (エラーにならない)
-- stdin が不正 JSON の場合は `process.exit(0)` で無出力終了
-- Nerd Font 未インストールのターミナルではアイコンが文字化けする
-- OSC8 ハイパーリンクは一部のターミナルエミュレーターで動作しない (Claude Code 側の制限: [anthropics/claude-code#26356](https://github.com/anthropics/claude-code/issues/26356))。IDE 統合ターミナル (VS Code, Cursor 等) では動作するが、スタンドアロンのターミナルエミュレーター (Konsole, Windows Terminal 等) ではプレーンテキストとして表示される場合がある
+- If `gh` CLI is not installed, PR info is silently skipped (no error)
+- Invalid JSON on stdin causes silent exit (`process.exit(0)`, no output)
+- Icons require a [Nerd Font](https://www.nerdfonts.com/) in the terminal
+- OSC8 hyperlinks don't work in some terminal emulators (Claude Code limitation: [anthropics/claude-code#26356](https://github.com/anthropics/claude-code/issues/26356)). Works in IDE integrated terminals (VS Code, Cursor), but may render as plain text in standalone emulators (Konsole, Windows Terminal)
