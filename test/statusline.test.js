@@ -5,10 +5,13 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
+const crypto = require('crypto');
+
 const INDEX = path.join(__dirname, '..', 'index.js');
 const CACHE_DIR = path.join(os.homedir(), '.claude', 'cache');
 // /tmp is not a git repo, so cacheKey falls back to 'default'
 const COMMENT_CACHE = path.join(CACHE_DIR, 'statusline-comment-default.json');
+const REPO_CWD = path.join(__dirname, '..');
 
 const hasClaudeAuth = (() => {
   try {
@@ -49,6 +52,21 @@ function runWithArgs(input, args = [], options = {}) {
 
 function cleanCommentCache() {
   try { fs.rmSync(COMMENT_CACHE, { force: true }); } catch {}
+}
+
+function getPrCacheFile(cwd) {
+  const toplevel = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+  const branch = execFileSync('git', ['-C', cwd, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+  const repoId = crypto.createHash('md5').update(toplevel).digest('hex').slice(0, 8);
+  const safeBranch = branch.replace(/\//g, '_');
+  return path.join(CACHE_DIR, `pr-${repoId}-${safeBranch}.json`);
+}
+
+function createPrCache(cwd, prData) {
+  const cacheFile = getPrCacheFile(cwd);
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  fs.writeFileSync(cacheFile, JSON.stringify(prData));
+  return cacheFile;
 }
 
 // Strip ANSI escape codes and OSC8 hyperlink sequences
@@ -232,6 +250,83 @@ describe('colleague comments', () => {
       assert.equal(lines.length, 2, 'should output 2 lines when cache is stale');
     } finally {
       cleanCommentCache();
+    }
+  });
+});
+
+describe('PR review status', () => {
+  const stdinData = {
+    cwd: REPO_CWD,
+    model: { display_name: 'Opus 4.6' },
+    context_window: { used_percentage: 30 },
+  };
+
+  let cacheFile;
+
+  function cleanPrCache() {
+    if (cacheFile) {
+      try { fs.rmSync(cacheFile, { force: true }); } catch {}
+    }
+  }
+
+  it('APPROVED shows check icon', () => {
+    cacheFile = createPrCache(REPO_CWD, { number: 99, url: 'https://github.com/test/repo/pull/99', reviewDecision: 'APPROVED' });
+    try {
+      const result = run(stdinData);
+      assert.equal(result.exitCode, 0);
+      assert.ok(result.stdout.includes('\uF00C'), 'should include check icon for APPROVED');
+      const plain = stripAnsi(result.stdout);
+      assert.ok(plain.includes('#99'), 'should include PR number');
+    } finally {
+      cleanPrCache();
+    }
+  });
+
+  it('CHANGES_REQUESTED shows close icon', () => {
+    cacheFile = createPrCache(REPO_CWD, { number: 100, url: 'https://github.com/test/repo/pull/100', reviewDecision: 'CHANGES_REQUESTED' });
+    try {
+      const result = run(stdinData);
+      assert.equal(result.exitCode, 0);
+      assert.ok(result.stdout.includes('\uF00D'), 'should include close icon for CHANGES_REQUESTED');
+    } finally {
+      cleanPrCache();
+    }
+  });
+
+  it('REVIEW_REQUIRED shows circle-o icon', () => {
+    cacheFile = createPrCache(REPO_CWD, { number: 101, url: 'https://github.com/test/repo/pull/101', reviewDecision: 'REVIEW_REQUIRED' });
+    try {
+      const result = run(stdinData);
+      assert.equal(result.exitCode, 0);
+      assert.ok(result.stdout.includes('\uF10C'), 'should include circle-o icon for REVIEW_REQUIRED');
+    } finally {
+      cleanPrCache();
+    }
+  });
+
+  it('empty reviewDecision shows no review icon', () => {
+    cacheFile = createPrCache(REPO_CWD, { number: 102, url: 'https://github.com/test/repo/pull/102', reviewDecision: '' });
+    try {
+      const result = run(stdinData);
+      assert.equal(result.exitCode, 0);
+      assert.ok(!result.stdout.includes('\uF00C'), 'should not include check icon');
+      assert.ok(!result.stdout.includes('\uF00D'), 'should not include close icon');
+      assert.ok(!result.stdout.includes('\uF10C'), 'should not include circle-o icon');
+    } finally {
+      cleanPrCache();
+    }
+  });
+
+  it('legacy cache without reviewDecision shows no review icon', () => {
+    cacheFile = createPrCache(REPO_CWD, { number: 103, url: 'https://github.com/test/repo/pull/103' });
+    try {
+      const result = run(stdinData);
+      assert.equal(result.exitCode, 0);
+      assert.ok(!result.stdout.includes('\uF00C'), 'should not include check icon');
+      assert.ok(!result.stdout.includes('\uF00D'), 'should not include close icon');
+      assert.ok(!result.stdout.includes('\uF10C'), 'should not include circle-o icon');
+    } finally {
+      cleanPrCache();
     }
   });
 });
