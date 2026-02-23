@@ -365,6 +365,6 @@ if (colleagueInstruction !== null) {
 
 let output = `${line1}\n${line2}`;
 if (cachedComment) {
-  output += `\n${DIM_WHITE}${ICON_COMMENT} ${cachedComment}${RESET}`;
+  output += `\n\x1b[3;37m${ICON_COMMENT} ${cachedComment}${RESET}`;
 }
 process.stdout.write(output);
