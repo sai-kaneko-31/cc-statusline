@@ -44,18 +44,30 @@ if (generateCommentIdx !== -1) {
     const { branch, changedFiles, time, hpRemaining, instruction, costUsd, durationMs, linesAdded, linesRemoved, previousComments } = ctx;
     const commentModel = process.env.STATUSLINE_COMMENT_MODEL || 'haiku';
 
-    const filesStr = (changedFiles || []).join(', ');
+    const files = (changedFiles || []).slice(0, 5);
+    const filesStr = files.length > 0 ? files.join(', ') : '';
     const durationMin = durationMs ? Math.floor(durationMs / 60000) : null;
     const prevStr = (previousComments || []).length > 0
-      ? `\nPrevious comments (DO NOT repeat these): ${previousComments.map((c) => `"${c}"`).join(', ')}`
+      ? `\nPrevious comments: ${previousComments.map((c) => `"${c}"`).join(', ')}`
       : '';
+
+    // Build context fields, omitting empty/unknown values
+    const ctxParts = [];
+    if (filesStr) ctxParts.push(`files=[${filesStr}]`);
+    if (branch) ctxParts.push(`branch="${branch}"`);
+    if (time) ctxParts.push(`time="${time}"`);
+    if (durationMin != null) ctxParts.push(`duration=${durationMin}min`);
+    if (costUsd != null) ctxParts.push(`cost=$${costUsd.toFixed(2)}`);
+    if (linesAdded || linesRemoved) ctxParts.push(`lines +${linesAdded || 0}/-${linesRemoved || 0}`);
+    if (hpRemaining != null && hpRemaining <= 15) ctxParts.push(`HP=${hpRemaining}% (low!)`);
+
     const prompt = [
-      `You are a colleague sitting next to a developer. ${instruction || 'Be friendly and supportive.'}`,
-      `Context: changed files=[${filesStr}], branch="${branch || 'unknown'}", time="${time || ''}", HP remaining=${hpRemaining != null ? hpRemaining + '%' : 'unknown'}, session cost=$${costUsd != null ? costUsd.toFixed(2) : '?'}, session duration=${durationMin != null ? durationMin + 'min' : '?'}, lines +${linesAdded || 0}/-${linesRemoved || 0}.${prevStr}`,
-      'Priority: comment on changed files > branch name > time of day > session duration/cost. Only mention HP/context size if critically low (<15%).',
-      'Give ONE comment (2-3 short sentences, 40-80 chars total) that is natural, context-aware, and DIFFERENT from previous comments.',
-      'Output ONLY the comment text. No quotes, no prefix.',
-    ].join('\n');
+      instruction || 'Be friendly and supportive.',
+      `You are a colleague sitting next to a developer. React to their work with a short remark.`,
+      ctxParts.length > 0 ? `Context: ${ctxParts.join(', ')}.${prevStr}` : '',
+      'Priority: changed files > branch > time > duration/cost.',
+      'Give ONE comment (2-3 short sentences). Output ONLY the comment text.',
+    ].filter(Boolean).join('\n');
 
     const env = { ...process.env };
     delete env.CLAUDECODE;
@@ -69,7 +81,7 @@ if (generateCommentIdx !== -1) {
       env,
     }).trim();
 
-    // Sanitize: collapse to single line, truncate to 80 chars
+    // Sanitize: collapse to single line, truncate to 120 chars
     const result = raw.replace(/[\r\n]+/g, ' ').slice(0, 120);
 
     if (result) {
@@ -360,7 +372,7 @@ if (colleagueInstruction !== null) {
     const changedFiles = exec(`git -C "${cwd}" diff --name-only HEAD`);
     const contextObj = {
       branch: gitBranch,
-      changedFiles: changedFiles ? changedFiles.split('\n').slice(0, 20) : [],
+      changedFiles: changedFiles ? changedFiles.split('\n').slice(0, 5) : [],
       time: currentTime,
       hpRemaining: remaining,
       costUsd,
