@@ -43,7 +43,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 |-------|------|----------|-------------|
 | `cwd` | string | Yes | Working directory (used for git info) |
 | `model.display_name` | string | No | Model name (icon changes for "Opus"/"Sonnet"/"Haiku") |
-| `context_window.used_percentage` | number | No | Context usage percentage (used for HP bar) |
+| `context_window.used_percentage` | number | No | Context usage percentage (used for context window bar) |
 | `cost.total_cost_usd` | number | No | Session total cost in USD (used in colleague comments) |
 | `cost.total_duration_ms` | number | No | Session total duration in ms (used in colleague comments) |
 | `cost.total_lines_added` | number | No | Total lines added in session (used in colleague comments) |
@@ -54,14 +54,14 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 
 - PR info cached at `~/.claude/cache/pr-<repoHash>-<branch>.json` (TTL: 5 min, override with `STATUSLINE_PR_CACHE_TTL_MS`)
 - repoHash is first 8 chars of MD5 of `git rev-parse --show-toplevel`
-- HP bar converts used_percentage to "remaining until 85% (auto-compact threshold)"
+- Context window bar converts used_percentage to "remaining until 85% (auto-compact threshold)"
 - OSC8 hyperlinks use BEL (`\x07`) terminator
 - All git commands have `timeout: 3000ms`; `gh` commands use `timeout 2`
 - `--invalidate-cache` mode: deletes cache file when `gh pr create/merge/close` is detected in PostToolUse hook input
 - Comment cache at `~/.claude/cache/statusline-comment-<hash>.json` where hash = MD5(toplevel + session_id)[:8] (TTL: 5 min, override with `STATUSLINE_COMMENT_TTL_MS`)
 - Comment cache format: `{ comment: "text", history: ["prev1", "prev2", ...] }` — history keeps last N comments for dedup
 - Comment prompt: instruction first (persona adherence), dynamic context (empty fields omitted), changedFiles max 5
-- Comment prompt priority: changed files > branch > time > duration/cost; HP only shown if <15%
+- Comment prompt priority: changed files > branch > time > duration/cost; context window remaining only shown if <15%
 - Comment dedup uses positive instruction ("say something different") instead of negative ("DO NOT repeat")
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model>` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments

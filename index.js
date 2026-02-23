@@ -59,7 +59,7 @@ if (generateCommentIdx !== -1) {
     if (durationMin != null) ctxParts.push(`duration=${durationMin}min`);
     if (costUsd != null) ctxParts.push(`cost=$${costUsd.toFixed(2)}`);
     if (linesAdded || linesRemoved) ctxParts.push(`lines +${linesAdded || 0}/-${linesRemoved || 0}`);
-    if (hpRemaining != null && hpRemaining <= 15) ctxParts.push(`HP=${hpRemaining}% (low!)`);
+    if (hpRemaining != null && hpRemaining <= 15) ctxParts.push(`context_window_remaining=${hpRemaining}% (low!)`);
 
     const prompt = [
       instruction || 'Be friendly and supportive.',
