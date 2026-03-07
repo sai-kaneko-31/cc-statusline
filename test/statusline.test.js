@@ -56,7 +56,12 @@ function cleanCommentCache() {
 
 function getPrCacheFile(cwd) {
   const toplevel = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-  const branch = execFileSync('git', ['-C', cwd, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+  let branch;
+  try {
+    branch = execFileSync('git', ['-C', cwd, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+  } catch {
+    branch = execFileSync('git', ['-C', cwd, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
+  }
   const repoId = crypto.createHash('md5').update(toplevel).digest('hex').slice(0, 8);
   const safeBranch = branch.replace(/\//g, '_');
   return path.join(CACHE_DIR, `pr-${repoId}-${safeBranch}.json`);
