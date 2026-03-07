@@ -74,7 +74,7 @@ if (generateCommentIdx !== -1) {
     delete env.CLAUDE_CODE_ENTRYPOINT;
     delete env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS;
 
-    const raw = execFileSync('claude', ['-p', prompt, '--model', commentModel], {
+    const raw = execFileSync('claude', ['-p', prompt, '--model', commentModel, '--no-session-persistence'], {
       encoding: 'utf8',
       timeout: 30000,
       stdio: ['pipe', 'pipe', 'pipe'],

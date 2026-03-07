@@ -63,7 +63,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - Comment prompt: instruction first (persona adherence), dynamic context (empty fields omitted), changedFiles max 5
 - Comment prompt priority: changed files > branch > time > duration/cost; context window remaining only shown if <15%
 - Comment dedup uses positive instruction ("say something different") instead of negative ("DO NOT repeat")
-- `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model>` to generate context-aware comments
+- `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model> --no-session-persistence` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
 - PR review status: `reviewDecision` from `gh pr view` mapped to icons (APPROVED→, CHANGES_REQUESTED→, REVIEW_REQUIRED→)
