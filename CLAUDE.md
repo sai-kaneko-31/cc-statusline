@@ -96,3 +96,5 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - The `--generate-comment` background process must unset `CLAUDECODE` and related env vars to avoid recursion
 - Tests use `process.execPath` (not `'node'`) for portability; `claude` CLI tests are skipped when not authenticated
 - GitHub repo rules require PRs to merge into main (direct push rejected); merge commits disabled, use `gh pr merge --squash`
+- Claude Code's statusline renderer truncates lines with too many ANSI escape sequences; keep transitions minimal (≤6 per line), avoid mid-bar color switching
+- Effort bolt icon uses ⚡ (U+26A1, full-width) not Nerd Font \uF0E7; width calculations must add +1 for the extra column
