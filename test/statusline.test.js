@@ -199,7 +199,7 @@ describe('statusline', () => {
     });
     const plain = stripAnsi(result.stdout);
     assert.ok(plain.includes(settings.effortLevel), `should include effort level "${settings.effortLevel}"`);
-    assert.ok(result.stdout.includes('\uF0E7'), 'should include bolt icon');
+    assert.ok(result.stdout.includes('\u26A1'), 'should include bolt icon');
   });
 
   it('git repo cwd shows branch icon', () => {

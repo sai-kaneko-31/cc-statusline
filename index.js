@@ -207,7 +207,7 @@ const ICON_COMMENT = '\uF075';  //  comment
 const ICON_REVIEW_APPROVED = '\uF00C';   //  check
 const ICON_REVIEW_CHANGES = '\uF00D';    //  close
 const ICON_REVIEW_REQUIRED = '\uF10C';   //  circle-o
-const ICON_BOLT = '\uF0E7';             //  bolt (effort level)
+const ICON_BOLT = '\u26A1';              // ⚡ bolt (effort level, full-width)
 
 const COL_SEP = '  ';
 
@@ -345,7 +345,7 @@ if (exec(`git -C "${cwd}" rev-parse --git-dir`)) {
 // ── Time ──
 const now = new Date();
 const p2 = (n) => String(n).padStart(2, '0');
-const currentTime = `${now.getFullYear()}/${p2(now.getMonth() + 1)}/${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
+const currentTime = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
 
 // ── Column widths ──
 const REVIEW_MAP = {
@@ -366,7 +366,8 @@ const LINE_OVERHEAD = 29;
 const maxContentCols = Math.max(30, termCols - LINE_OVERHEAD);
 
 const effortSuffix = effortLevel ? ` ${ICON_BOLT}${effortLevel}` : '';
-const rawCol1 = Math.max(displayDir.length, model.length + effortSuffix.length);
+const effortVisualWidth = effortSuffix ? effortSuffix.length + 1 : 0; // ⚡ is 2 cols, .length counts as 1
+const rawCol1 = Math.max(displayDir.length, model.length + effortVisualWidth);
 const rawBranchLen = (gitBranch + prText + reviewText).length;
 const rawCol2 = Math.max(rawBranchLen, ctxVisibleLen);
 
@@ -380,7 +381,7 @@ if (rawCol1 + rawCol2 <= maxContentCols) {
 }
 
 const displayDirTrunc = truncStr(displayDir, col1Len);
-const modelMaxLen = effortSuffix ? Math.max(5, col1Len - effortSuffix.length) : col1Len;
+const modelMaxLen = effortSuffix ? Math.max(5, col1Len - effortVisualWidth) : col1Len;
 const modelTrunc = truncStr(model, modelMaxLen);
 const branchMaxLen = Math.max(5, col2Len - prText.length - reviewText.length);
 const gitBranchTrunc = truncStr(gitBranch, branchMaxLen);
@@ -422,11 +423,9 @@ else if (model.includes('Sonnet')) modelIcon = ICON_SONNET;
 else if (model.includes('Haiku')) modelIcon = ICON_HAIKU;
 else modelIcon = ICON_SONNET;
 
-const modelPadLen = col1Len - modelTrunc.length - effortSuffix.length;
-const modelPad = modelPadLen > 0 ? ' '.repeat(modelPadLen) : '';
-let line2 = effortSuffix
-  ? `${T.model}${modelIcon} ${modelTrunc}${RESET}${T.dim}${effortSuffix}${modelPad}${RESET}`
-  : `${T.model}${modelIcon} ${padEnd(modelTrunc, col1Len)}${RESET}`;
+const modelDisplay = modelTrunc + effortSuffix;
+const modelPadTarget = effortSuffix ? col1Len - 1 : col1Len; // ⚡ is 2 cols but .length counts 1
+let line2 = `${T.model}${modelIcon} ${padEnd(modelDisplay, modelPadTarget)}${RESET}`;
 
 let remaining = null;
 if (usedPct != null && usedPct !== '') {
@@ -448,7 +447,7 @@ if (usedPct != null && usedPct !== '') {
   const ctxPad = col2Len - ctxTextLen;
   const ctxPadding = ctxPad > 0 ? ' '.repeat(ctxPad) : '';
 
-  line2 += `${COL_SEP}${barColor}${ICON_HEART} [${barFilled}${T.dim}${barEmpty}${barColor}]${remaining}%${ctxPadding}${RESET}`;
+  line2 += `${COL_SEP}${barColor}${ICON_HEART} [${barFilled}${barEmpty}]${remaining}%${ctxPadding}${RESET}`;
 } else {
   line2 += `${COL_SEP}${T.dim}${ICON_HEART} ${' '.repeat(col2Len)}${RESET}`;
 }
