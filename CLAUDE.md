@@ -4,7 +4,7 @@ Claude Code statusline command (single-file Node.js CLI).
 
 ## Architecture
 
-- Entry point: `index.js` (~400 lines, zero dependencies)
+- Entry point: `index.js` (~500 lines, zero dependencies)
 - Reads JSON from stdin, outputs ANSI-colored 2-line status to stdout
 - Three modes: statusline (default), `--invalidate-cache` (PostToolUse hook), and `--generate-comment` (background LLM comment generation)
 - Modules: child_process, fs, path, os, crypto (all Node.js built-in)
@@ -34,7 +34,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 
 - Framework: `node:test` (Node.js built-in)
 - Test file: `test/statusline.test.js`
-- CI: GitHub Actions with Node.js 18/20/22 matrix
+- CI: GitHub Actions with Node.js 18/20/22 matrix + `tests` summary job (required status check)
 - `node --test` output may not display in Claude Code Bash tool; redirect to file (`1>/tmp/test.txt 2>&1`) then Read
 
 ## stdin JSON Fields
@@ -63,10 +63,13 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - Comment prompt: instruction first (persona adherence), dynamic context (empty fields omitted), changedFiles max 5
 - Comment prompt priority: changed files > branch > time > duration/cost; context window remaining only shown if <15%
 - Comment dedup uses positive instruction ("say something different") instead of negative ("DO NOT repeat")
+- Comment output sanitized: newlines collapsed, truncated to 80 chars at generation, further truncated to terminal width at display
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model> --no-session-persistence` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
 - Effort level read from `~/.claude/settings.json` `effortLevel` field, displayed next to model name with bolt icon
+- Terminal width detection: `process.stderr.columns` → `COLUMNS` env → default 100; columns dynamically capped to fit
+- Model display_name parenthetical suffix (e.g. "(1M context)") auto-stripped; time format is `HH:MM:SS`
 - PR review status: `reviewDecision` from `gh pr view` mapped to icons (APPROVED→, CHANGES_REQUESTED→, REVIEW_REQUIRED→)
 - PR cache format: `{ number, url, reviewDecision }` — old caches without `reviewDecision` fall back to no icon
 
