@@ -42,7 +42,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `cwd` | string | Yes | Working directory (used for git info) |
-| `model.display_name` | string | No | Model name (icon changes for "Opus"/"Sonnet"/"Haiku") |
+| `model.display_name` | string | No | Model name (parenthetical suffix like "(1M context)" stripped; icon changes for "Opus"/"Sonnet"/"Haiku") |
 | `context_window.used_percentage` | number | No | Context usage percentage (used for context window bar) |
 | `cost.total_cost_usd` | number | No | Session total cost in USD (used in colleague comments) |
 | `cost.total_duration_ms` | number | No | Session total duration in ms (used in colleague comments) |
@@ -66,6 +66,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model> --no-session-persistence` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
+- Effort level read from `~/.claude/settings.json` `effortLevel` field, displayed next to model name with bolt icon
 - PR review status: `reviewDecision` from `gh pr view` mapped to icons (APPROVED→, CHANGES_REQUESTED→, REVIEW_REQUIRED→)
 - PR cache format: `{ number, url, reviewDecision }` — old caches without `reviewDecision` fall back to no icon
 

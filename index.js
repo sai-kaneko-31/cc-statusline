@@ -112,7 +112,16 @@ try {
 }
 
 const cwd = data.cwd || (data.workspace && data.workspace.current_dir) || '';
-const model = (data.model && data.model.display_name) || '';
+const modelRaw = (data.model && data.model.display_name) || '';
+const model = modelRaw.replace(/\s*\(.*?\)\s*$/, '');
+
+// Read effort level from ~/.claude/settings.json
+let effortLevel = '';
+try {
+  const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+  effortLevel = settings.effortLevel || '';
+} catch {}
 const usedPct = data.context_window && data.context_window.used_percentage;
 const costUsd = data.cost && data.cost.total_cost_usd;
 const durationMs = data.cost && data.cost.total_duration_ms;
@@ -198,6 +207,7 @@ const ICON_COMMENT = '\uF075';  //  comment
 const ICON_REVIEW_APPROVED = '\uF00C';   //  check
 const ICON_REVIEW_CHANGES = '\uF00D';    //  close
 const ICON_REVIEW_REQUIRED = '\uF10C';   //  circle-o
+const ICON_BOLT = '\uF0E7';             //  bolt (effort level)
 
 const COL_SEP = '  ';
 
@@ -355,7 +365,8 @@ const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
 const LINE_OVERHEAD = 29;
 const maxContentCols = Math.max(30, termCols - LINE_OVERHEAD);
 
-const rawCol1 = Math.max(displayDir.length, model.length);
+const effortSuffix = effortLevel ? ` ${ICON_BOLT}${effortLevel}` : '';
+const rawCol1 = Math.max(displayDir.length, model.length + effortSuffix.length);
 const rawBranchLen = (gitBranch + prText + reviewText).length;
 const rawCol2 = Math.max(rawBranchLen, ctxVisibleLen);
 
@@ -369,7 +380,8 @@ if (rawCol1 + rawCol2 <= maxContentCols) {
 }
 
 const displayDirTrunc = truncStr(displayDir, col1Len);
-const modelTrunc = truncStr(model, col1Len);
+const modelMaxLen = effortSuffix ? Math.max(5, col1Len - effortSuffix.length) : col1Len;
+const modelTrunc = truncStr(model, modelMaxLen);
 const branchMaxLen = Math.max(5, col2Len - prText.length - reviewText.length);
 const gitBranchTrunc = truncStr(gitBranch, branchMaxLen);
 const branchVisible = gitBranchTrunc + prText + reviewText;
@@ -410,7 +422,11 @@ else if (model.includes('Sonnet')) modelIcon = ICON_SONNET;
 else if (model.includes('Haiku')) modelIcon = ICON_HAIKU;
 else modelIcon = ICON_SONNET;
 
-let line2 = `${T.model}${modelIcon} ${padEnd(modelTrunc, col1Len)}${RESET}`;
+const modelPadLen = col1Len - modelTrunc.length - effortSuffix.length;
+const modelPad = modelPadLen > 0 ? ' '.repeat(modelPadLen) : '';
+let line2 = effortSuffix
+  ? `${T.model}${modelIcon} ${modelTrunc}${RESET}${T.dim}${effortSuffix}${modelPad}${RESET}`
+  : `${T.model}${modelIcon} ${padEnd(modelTrunc, col1Len)}${RESET}`;
 
 let remaining = null;
 if (usedPct != null && usedPct !== '') {

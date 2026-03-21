@@ -170,6 +170,38 @@ describe('statusline', () => {
     assert.equal(result.stdout, '');
   });
 
+  it('strips parenthetical suffix from model display_name', () => {
+    const result = run({
+      cwd: '/tmp',
+      model: { display_name: 'Opus 4.6 (1M context)' },
+      context_window: { used_percentage: 30 },
+    });
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('Opus 4.6'), 'should include base model name');
+    assert.ok(!plain.includes('(1M context)'), 'should not include parenthetical suffix');
+  });
+
+  it('shows effort level from settings with bolt icon', () => {
+    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    let settings;
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    } catch {
+      settings = {};
+    }
+    if (!settings.effortLevel) {
+      return; // skip if no effort level configured
+    }
+    const result = run({
+      cwd: '/tmp',
+      model: { display_name: 'Opus 4.6' },
+      context_window: { used_percentage: 30 },
+    });
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes(settings.effortLevel), `should include effort level "${settings.effortLevel}"`);
+    assert.ok(result.stdout.includes('\uF0E7'), 'should include bolt icon');
+  });
+
   it('git repo cwd shows branch icon', () => {
     const result = run({
       cwd: path.join(__dirname, '..'),
