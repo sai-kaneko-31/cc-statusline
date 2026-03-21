@@ -82,7 +82,7 @@ if (generateCommentIdx !== -1) {
     }).trim();
 
     // Sanitize: collapse to single line, truncate to 120 chars
-    const result = raw.replace(/[\r\n]+/g, ' ').slice(0, 120);
+    const result = raw.replace(/[\r\n]+/g, ' ').slice(0, 80);
 
     if (result) {
       const homeDir = os.homedir();
@@ -224,6 +224,13 @@ function padEnd(str, len) {
   return str.length < len ? str + ' '.repeat(len - str.length) : str;
 }
 
+// Truncate string with ellipsis if too long
+function truncStr(str, maxLen) {
+  if (str.length <= maxLen) return str;
+  if (maxLen < 2) return str.slice(0, 1);
+  return str.slice(0, maxLen - 1) + '\u2026';
+}
+
 // Directory: replace $HOME with ~
 const homeDir = os.homedir();
 const displayDir = cwd.startsWith(homeDir)
@@ -331,7 +338,6 @@ const p2 = (n) => String(n).padStart(2, '0');
 const currentTime = `${now.getFullYear()}/${p2(now.getMonth() + 1)}/${p2(now.getDate())} ${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
 
 // ── Column widths ──
-const col1Len = Math.max(displayDir.length, model.length);
 const REVIEW_MAP = {
   APPROVED: { icon: ICON_REVIEW_APPROVED, color: T.added },
   CHANGES_REQUESTED: { icon: ICON_REVIEW_CHANGES, color: T.deleted },
@@ -340,12 +346,36 @@ const REVIEW_MAP = {
 const reviewInfo = REVIEW_MAP[prReviewDecision] || null;
 const prText = prNum ? ` #${prNum}` : '';
 const reviewText = reviewInfo ? ` ${reviewInfo.icon}` : '';
-const branchVisible = gitBranch + prText + reviewText;
 const ctxVisibleLen = 15; // [██████████]XX%
-const col2Len = Math.max(branchVisible.length, ctxVisibleLen);
+
+// Terminal width detection (stdout piped to Claude Code, try stderr)
+const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
+
+// Line 2 (wider): icon(2) + col1 + COL_SEP(2) + icon(2) + col2 + COL_SEP(2) + icon(2) + time(19) = col1 + col2 + 29
+const LINE_OVERHEAD = 29;
+const maxContentCols = Math.max(30, termCols - LINE_OVERHEAD);
+
+const rawCol1 = Math.max(displayDir.length, model.length);
+const rawBranchLen = (gitBranch + prText + reviewText).length;
+const rawCol2 = Math.max(rawBranchLen, ctxVisibleLen);
+
+let col1Len, col2Len;
+if (rawCol1 + rawCol2 <= maxContentCols) {
+  col1Len = rawCol1;
+  col2Len = rawCol2;
+} else {
+  col2Len = Math.max(ctxVisibleLen, Math.min(rawCol2, maxContentCols - 10));
+  col1Len = Math.max(10, Math.min(rawCol1, maxContentCols - col2Len));
+}
+
+const displayDirTrunc = truncStr(displayDir, col1Len);
+const modelTrunc = truncStr(model, col1Len);
+const branchMaxLen = Math.max(5, col2Len - prText.length - reviewText.length);
+const gitBranchTrunc = truncStr(gitBranch, branchMaxLen);
+const branchVisible = gitBranchTrunc + prText + reviewText;
 
 // ── Line 1: path + branch+PR + git stats ──
-let line1 = `${T.folder}${ICON_FOLDER} ${padEnd(displayDir, col1Len)}${RESET}`;
+let line1 = `${T.folder}${ICON_FOLDER} ${padEnd(displayDirTrunc, col1Len)}${RESET}`;
 
 if (gitBranch) {
   const branchPad = col2Len - branchVisible.length;
@@ -353,9 +383,9 @@ if (gitBranch) {
   if (prNum) {
     // Branch name + OSC8 clickable PR link + review status
     const reviewStr = reviewInfo ? ` ${reviewInfo.color}${reviewInfo.icon}${RESET}` : '';
-    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${gitBranch}${RESET} ${T.dim}${osc8(`#${prNum}`, prUrl)}${RESET}${reviewStr}${padding}`;
+    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${gitBranchTrunc}${RESET} ${T.dim}${osc8(`#${prNum}`, prUrl)}${RESET}${reviewStr}${padding}`;
   } else {
-    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${padEnd(gitBranch, col2Len)}${RESET}`;
+    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${padEnd(gitBranchTrunc, col2Len)}${RESET}`;
   }
 }
 
@@ -380,7 +410,7 @@ else if (model.includes('Sonnet')) modelIcon = ICON_SONNET;
 else if (model.includes('Haiku')) modelIcon = ICON_HAIKU;
 else modelIcon = ICON_SONNET;
 
-let line2 = `${T.model}${modelIcon} ${padEnd(model, col1Len)}${RESET}`;
+let line2 = `${T.model}${modelIcon} ${padEnd(modelTrunc, col1Len)}${RESET}`;
 
 let remaining = null;
 if (usedPct != null && usedPct !== '') {
@@ -456,6 +486,7 @@ if (colleagueInstruction !== null) {
 
 let output = `${line1}\n${line2}`;
 if (cachedComment) {
-  output += `\n${T.dim}${ICON_COMMENT} ${cachedComment}${RESET}`;
+  const commentMaxLen = Math.max(20, termCols - 4);
+  output += `\n${T.dim}${ICON_COMMENT} ${truncStr(cachedComment, commentMaxLen)}${RESET}`;
 }
 process.stdout.write(output);
