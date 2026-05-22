@@ -7,34 +7,6 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 
-// ── --invalidate-cache mode (PostToolUse hook) ──
-if (process.argv.includes('--invalidate-cache')) {
-  try {
-    const input = JSON.parse(fs.readFileSync(0, 'utf8'));
-    const cmd = (input.tool_input && input.tool_input.command) || '';
-    if (!/gh\s+pr\s+(create|merge|close|review)/.test(cmd)) process.exit(0);
-
-    const homeDir = os.homedir();
-    const cacheDir = path.join(homeDir, '.claude', 'cache');
-    if (!fs.existsSync(cacheDir)) process.exit(0);
-
-    const branch = execSync('git symbolic-ref --short HEAD', {
-      encoding: 'utf8',
-      timeout: 3000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    const toplevel = execSync('git rev-parse --show-toplevel', {
-      encoding: 'utf8',
-      timeout: 3000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    }).trim();
-    const repoId = crypto.createHash('md5').update(toplevel).digest('hex').slice(0, 8);
-    const cacheFile = path.join(cacheDir, `pr-${repoId}-${branch.replace(/\//g, '_')}.json`);
-    fs.rmSync(cacheFile, { force: true });
-  } catch {}
-  process.exit(0);
-}
-
 // ── --generate-comment mode (background LLM comment generation) ──
 const generateCommentIdx = process.argv.indexOf('--generate-comment');
 if (generateCommentIdx !== -1) {
@@ -115,13 +87,18 @@ const cwd = data.cwd || (data.workspace && data.workspace.current_dir) || '';
 const modelRaw = (data.model && data.model.display_name) || '';
 const model = modelRaw.replace(/\s*\(.*?\)\s*$/, '');
 
-// Read effort level from ~/.claude/settings.json
-let effortLevel = '';
-try {
-  const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
-  const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-  effortLevel = settings.effortLevel || '';
-} catch {}
+// Effort level: prefer stdin `effort.level` (reflects mid-session /effort
+// changes; values: low/medium/high/xhigh/max). Fall back to
+// ~/.claude/settings.json `effortLevel` for older Claude Code versions
+// that don't send the field.
+let effortLevel = (data.effort && data.effort.level) || '';
+if (!effortLevel) {
+  try {
+    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    effortLevel = settings.effortLevel || '';
+  } catch {}
+}
 const usedPct = data.context_window && data.context_window.used_percentage;
 const costUsd = data.cost && data.cost.total_cost_usd;
 const durationMs = data.cost && data.cost.total_duration_ms;
@@ -206,7 +183,8 @@ const ICON_CLOCK = '\uF017';    //  clock
 const ICON_COMMENT = '\uF075';  //  comment
 const ICON_REVIEW_APPROVED = '\uF00C';   //  check
 const ICON_REVIEW_CHANGES = '\uF00D';    //  close
-const ICON_REVIEW_REQUIRED = '\uF10C';   //  circle-o
+const ICON_REVIEW_PENDING = '\uF10C';    //  circle-o
+const ICON_REVIEW_DRAFT = '\uF040';      //  pencil
 const ICON_BOLT = '\u26A1';              // ⚡ bolt (effort level, full-width)
 
 const COL_SEP = '  ';
@@ -252,9 +230,11 @@ let gitBranch = '';
 let gitAheadBehind = '';
 let gitAdded = '';
 let gitDeleted = '';
-let prNum = '';
-let prUrl = '';
-let prReviewDecision = '';
+// PR info from stdin: Claude Code provides pr.{number,url,review_state}
+// natively (absent when not in a git repo, no PR, or PR merged/closed).
+const prNum = data.pr && data.pr.number != null ? String(data.pr.number) : '';
+const prUrl = (data.pr && data.pr.url) || '';
+const prReviewDecision = (data.pr && data.pr.review_state) || '';
 
 if (exec(`git -C "${cwd}" rev-parse --git-dir`)) {
   gitBranch =
@@ -285,61 +265,6 @@ if (exec(`git -C "${cwd}" rev-parse --git-dir`)) {
     if (addMatch) gitAdded = addMatch[1];
     if (delMatch) gitDeleted = delMatch[1];
   }
-
-  // PR info with file-based cache
-  if (gitBranch) {
-    const cacheDir = path.join(homeDir, '.claude', 'cache');
-    const ttl = parseInt(process.env.STATUSLINE_PR_CACHE_TTL_MS) || 300000;
-    try {
-      fs.mkdirSync(cacheDir, { recursive: true });
-    } catch {}
-
-    const toplevel = exec(`git -C "${cwd}" rev-parse --show-toplevel`);
-    const repoId = crypto
-      .createHash('md5')
-      .update(toplevel)
-      .digest('hex')
-      .slice(0, 8);
-    const safeBranch = gitBranch.replace(/\//g, '_');
-    const cacheFile = path.join(cacheDir, `pr-${repoId}-${safeBranch}.json`);
-
-    let cached = null;
-    try {
-      const stat = fs.statSync(cacheFile);
-      if (Date.now() - stat.mtimeMs < ttl) {
-        cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-      }
-    } catch {}
-
-    if (cached === null) {
-      const remoteUrl = exec(`git -C "${cwd}" remote get-url origin`);
-      const prJson = exec(
-        `timeout 2 gh pr view "${gitBranch}" --repo "${remoteUrl}" --json number,url,state,reviewDecision`
-      );
-      if (prJson) {
-        try {
-          const pr = JSON.parse(prJson);
-          cached =
-            pr.state === 'OPEN'
-              ? { number: pr.number, url: pr.url, reviewDecision: pr.reviewDecision || '' }
-              : { none: true };
-        } catch {
-          cached = { none: true };
-        }
-      } else {
-        cached = { none: true };
-      }
-      try {
-        fs.writeFileSync(cacheFile, JSON.stringify(cached));
-      } catch {}
-    }
-
-    if (cached && !cached.none) {
-      prNum = String(cached.number);
-      prUrl = cached.url;
-      prReviewDecision = cached.reviewDecision || '';
-    }
-  }
 }
 
 // ── Time ──
@@ -348,10 +273,12 @@ const p2 = (n) => String(n).padStart(2, '0');
 const currentTime = `${p2(now.getHours())}:${p2(now.getMinutes())}:${p2(now.getSeconds())}`;
 
 // ── Column widths ──
+// Keyed by stdin pr.review_state (approved/pending/changes_requested/draft)
 const REVIEW_MAP = {
-  APPROVED: { icon: ICON_REVIEW_APPROVED, color: T.added },
-  CHANGES_REQUESTED: { icon: ICON_REVIEW_CHANGES, color: T.deleted },
-  REVIEW_REQUIRED: { icon: ICON_REVIEW_REQUIRED, color: T.aheadBehind },
+  approved: { icon: ICON_REVIEW_APPROVED, color: T.added },
+  changes_requested: { icon: ICON_REVIEW_CHANGES, color: T.deleted },
+  pending: { icon: ICON_REVIEW_PENDING, color: T.aheadBehind },
+  draft: { icon: ICON_REVIEW_DRAFT, color: T.dim },
 };
 const reviewInfo = REVIEW_MAP[prReviewDecision] || null;
 const prText = prNum ? ` #${prNum}` : '';
@@ -396,7 +323,11 @@ if (gitBranch) {
   if (prNum) {
     // Branch name + OSC8 clickable PR link + review status
     const reviewStr = reviewInfo ? ` ${reviewInfo.color}${reviewInfo.icon}${RESET}` : '';
-    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${gitBranchTrunc}${RESET} ${T.dim}${osc8(`#${prNum}`, prUrl)}${RESET}${reviewStr}${padding}`;
+    // Wrap the PR number in an OSC8 link only when pr.url is present.
+    // pr.number can arrive from stdin without pr.url, and osc8 with an
+    // empty url emits a broken hyperlink (and 2 wasted ANSI transitions).
+    const prLabel = prUrl ? osc8(`#${prNum}`, prUrl) : `#${prNum}`;
+    line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${gitBranchTrunc}${RESET} ${T.dim}${prLabel}${RESET}${reviewStr}${padding}`;
   } else {
     line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${padEnd(gitBranchTrunc, col2Len)}${RESET}`;
   }

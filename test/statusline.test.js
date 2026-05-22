@@ -5,8 +5,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const crypto = require('crypto');
-
 const INDEX = path.join(__dirname, '..', 'index.js');
 const CACHE_DIR = path.join(os.homedir(), '.claude', 'cache');
 // /tmp is not a git repo, so cacheKey falls back to 'default'
@@ -52,26 +50,6 @@ function runWithArgs(input, args = [], options = {}) {
 
 function cleanCommentCache() {
   try { fs.rmSync(COMMENT_CACHE, { force: true }); } catch {}
-}
-
-function getPrCacheFile(cwd) {
-  const toplevel = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
-  let branch;
-  try {
-    branch = execFileSync('git', ['-C', cwd, 'symbolic-ref', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
-  } catch {
-    branch = execFileSync('git', ['-C', cwd, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim();
-  }
-  const repoId = crypto.createHash('md5').update(toplevel).digest('hex').slice(0, 8);
-  const safeBranch = branch.replace(/\//g, '_');
-  return path.join(CACHE_DIR, `pr-${repoId}-${safeBranch}.json`);
-}
-
-function createPrCache(cwd, prData) {
-  const cacheFile = getPrCacheFile(cwd);
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-  fs.writeFileSync(cacheFile, JSON.stringify(prData));
-  return cacheFile;
 }
 
 // Strip ANSI escape codes and OSC8 hyperlink sequences
@@ -179,6 +157,42 @@ describe('statusline', () => {
     const plain = stripAnsi(result.stdout);
     assert.ok(plain.includes('Opus 4.6'), 'should include base model name');
     assert.ok(!plain.includes('(1M context)'), 'should not include parenthetical suffix');
+  });
+
+  it('shows effort level from stdin effort.level with bolt icon', () => {
+    const result = run({
+      cwd: '/tmp',
+      model: { display_name: 'Opus 4.6' },
+      context_window: { used_percentage: 30 },
+      effort: { level: 'high' },
+    });
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('high'), 'should include effort level from stdin');
+    assert.ok(result.stdout.includes('⚡'), 'should include bolt icon');
+  });
+
+  it('stdin effort.level takes precedence over settings.json effortLevel', () => {
+    const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+    let settings;
+    try {
+      settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    } catch {
+      settings = {};
+    }
+    if (!settings.effortLevel) {
+      return; // skip if no effort level in settings to compare against
+    }
+    // Pick a stdin value guaranteed to differ from the settings value
+    const stdinLevel = settings.effortLevel === 'low' ? 'max' : 'low';
+    const result = run({
+      cwd: '/tmp',
+      model: { display_name: 'Opus 4.6' },
+      context_window: { used_percentage: 30 },
+      effort: { level: stdinLevel },
+    });
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes(stdinLevel), `should show stdin effort level "${stdinLevel}"`);
+    assert.ok(!plain.includes(settings.effortLevel), `should not show settings effortLevel "${settings.effortLevel}" when stdin provides one`);
   });
 
   it('shows effort level from settings with bolt icon', () => {
@@ -292,79 +306,69 @@ describe('colleague comments', () => {
 });
 
 describe('PR review status', () => {
-  const stdinData = {
-    cwd: REPO_CWD,
-    model: { display_name: 'Opus 4.6' },
-    context_window: { used_percentage: 30 },
-  };
-
-  let cacheFile;
-
-  function cleanPrCache() {
-    if (cacheFile) {
-      try { fs.rmSync(cacheFile, { force: true }); } catch {}
-    }
+  // PR info comes from stdin `pr.{number,url,review_state}` (Claude Code native)
+  function stdinWithPr(pr) {
+    const data = {
+      cwd: REPO_CWD,
+      model: { display_name: 'Opus 4.6' },
+      context_window: { used_percentage: 30 },
+    };
+    if (pr) data.pr = pr;
+    return data;
   }
 
-  it('APPROVED shows check icon', () => {
-    cacheFile = createPrCache(REPO_CWD, { number: 99, url: 'https://github.com/test/repo/pull/99', reviewDecision: 'APPROVED' });
-    try {
-      const result = run(stdinData);
-      assert.equal(result.exitCode, 0);
-      assert.ok(result.stdout.includes('\uF00C'), 'should include check icon for APPROVED');
-      const plain = stripAnsi(result.stdout);
-      assert.ok(plain.includes('#99'), 'should include PR number');
-    } finally {
-      cleanPrCache();
-    }
+  it('approved shows check icon', () => {
+    const result = run(stdinWithPr({ number: 99, url: 'https://github.com/test/repo/pull/99', review_state: 'approved' }));
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('\uF00C'), 'should include check icon for approved');
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('#99'), 'should include PR number');
   });
 
-  it('CHANGES_REQUESTED shows close icon', () => {
-    cacheFile = createPrCache(REPO_CWD, { number: 100, url: 'https://github.com/test/repo/pull/100', reviewDecision: 'CHANGES_REQUESTED' });
-    try {
-      const result = run(stdinData);
-      assert.equal(result.exitCode, 0);
-      assert.ok(result.stdout.includes('\uF00D'), 'should include close icon for CHANGES_REQUESTED');
-    } finally {
-      cleanPrCache();
-    }
+  it('changes_requested shows close icon', () => {
+    const result = run(stdinWithPr({ number: 100, url: 'https://github.com/test/repo/pull/100', review_state: 'changes_requested' }));
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('\uF00D'), 'should include close icon for changes_requested');
   });
 
-  it('REVIEW_REQUIRED shows circle-o icon', () => {
-    cacheFile = createPrCache(REPO_CWD, { number: 101, url: 'https://github.com/test/repo/pull/101', reviewDecision: 'REVIEW_REQUIRED' });
-    try {
-      const result = run(stdinData);
-      assert.equal(result.exitCode, 0);
-      assert.ok(result.stdout.includes('\uF10C'), 'should include circle-o icon for REVIEW_REQUIRED');
-    } finally {
-      cleanPrCache();
-    }
+  it('pending shows circle-o icon', () => {
+    const result = run(stdinWithPr({ number: 101, url: 'https://github.com/test/repo/pull/101', review_state: 'pending' }));
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('\uF10C'), 'should include circle-o icon for pending');
   });
 
-  it('empty reviewDecision shows no review icon', () => {
-    cacheFile = createPrCache(REPO_CWD, { number: 102, url: 'https://github.com/test/repo/pull/102', reviewDecision: '' });
-    try {
-      const result = run(stdinData);
-      assert.equal(result.exitCode, 0);
-      assert.ok(!result.stdout.includes('\uF00C'), 'should not include check icon');
-      assert.ok(!result.stdout.includes('\uF00D'), 'should not include close icon');
-      assert.ok(!result.stdout.includes('\uF10C'), 'should not include circle-o icon');
-    } finally {
-      cleanPrCache();
-    }
+  it('draft shows pencil icon', () => {
+    const result = run(stdinWithPr({ number: 104, url: 'https://github.com/test/repo/pull/104', review_state: 'draft' }));
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('\uF040'), 'should include pencil icon for draft');
   });
 
-  it('legacy cache without reviewDecision shows no review icon', () => {
-    cacheFile = createPrCache(REPO_CWD, { number: 103, url: 'https://github.com/test/repo/pull/103' });
-    try {
-      const result = run(stdinData);
-      assert.equal(result.exitCode, 0);
-      assert.ok(!result.stdout.includes('\uF00C'), 'should not include check icon');
-      assert.ok(!result.stdout.includes('\uF00D'), 'should not include close icon');
-      assert.ok(!result.stdout.includes('\uF10C'), 'should not include circle-o icon');
-    } finally {
-      cleanPrCache();
-    }
+  it('PR without review_state shows no review icon', () => {
+    const result = run(stdinWithPr({ number: 102, url: 'https://github.com/test/repo/pull/102' }));
+    assert.equal(result.exitCode, 0);
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('#102'), 'should still include PR number');
+    assert.ok(!result.stdout.includes('\uF00C'), 'should not include check icon');
+    assert.ok(!result.stdout.includes('\uF00D'), 'should not include close icon');
+    assert.ok(!result.stdout.includes('\uF10C'), 'should not include circle-o icon');
+    assert.ok(!result.stdout.includes('\uF040'), 'should not include pencil icon');
+  });
+
+  it('PR number without url renders plain (no broken OSC8 link)', () => {
+    const result = run(stdinWithPr({ number: 200 }));
+    assert.equal(result.exitCode, 0);
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('#200'), 'should still show PR number');
+    // osc8() with an empty url emits a hyperlink escape (ESC ] 8 ; ;).
+    // When pr.url is absent the number must render as plain text.
+    assert.ok(!result.stdout.includes('\x1b]8;;'), 'should not emit an OSC8 hyperlink without a url');
+  });
+
+  it('no pr field shows no PR number', () => {
+    const result = run(stdinWithPr(null));
+    assert.equal(result.exitCode, 0);
+    const plain = stripAnsi(result.stdout);
+    assert.ok(!plain.includes('#'), 'should not include any PR number');
   });
 });
 
