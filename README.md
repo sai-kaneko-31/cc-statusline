@@ -21,7 +21,6 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 ## Requirements
 
 - [Nerd Font](https://www.nerdfonts.com/) (terminal font)
-- [GitHub CLI](https://cli.github.com/) (`gh`) for PR links
 - Node.js >= 18
 
 ## Setup
@@ -33,6 +32,20 @@ Add to `~/.claude/settings.json`:
   "statusLine": {
     "type": "command",
     "command": "npx -y sai-kaneko-31/cc-statusline"
+  }
+}
+```
+
+### Live-updating clock
+
+The statusline re-runs only when Claude Code emits an event (new message, `/compact`, mode change). To keep the `HH:MM:SS` clock current, add `refreshInterval` (seconds):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y sai-kaneko-31/cc-statusline",
+    "refreshInterval": 10
   }
 }
 ```
@@ -55,12 +68,13 @@ Line 2: 🔲 <model>        ❤️ [<bar>]<remaining>%       🕐 <time>
 
 ### PR review status icons
 
-| reviewDecision | Icon | Color | Meaning |
-|----------------|------|-------|---------|
-| `APPROVED` | `` (check) | Green | PR approved |
-| `CHANGES_REQUESTED` | `` (close) | Red | Changes requested |
-| `REVIEW_REQUIRED` | `` (circle-o) | Yellow | Review pending |
-| (empty) | — | — | No icon shown |
+| `pr.review_state` | Icon | Color | Meaning |
+|-------------------|------|-------|---------|
+| `approved` | `` (check) | Green | PR approved |
+| `changes_requested` | `` (close) | Red | Changes requested |
+| `pending` | `` (circle-o) | Yellow | Review pending |
+| `draft` | `` (pencil) | Dim | Draft PR |
+| (absent) | — | — | No icon shown |
 
 ### Context window bar color
 
@@ -70,41 +84,9 @@ Line 2: 🔲 <model>        ❤️ [<bar>]<remaining>%       🕐 <time>
 | 16-40% | Yellow | Getting low |
 | 0-15% | Red | Auto-compact imminent |
 
-## PR link caching
+## PR display
 
-PR data is cached at `~/.claude/cache/pr-<repo-hash>-<branch>.json` with a 5-minute TTL.
-
-Override TTL with environment variable:
-
-```json
-{
-  "env": {
-    "STATUSLINE_PR_CACHE_TTL_MS": "60000"
-  }
-}
-```
-
-### Auto-invalidation hook
-
-Add a PostToolUse hook to auto-invalidate the cache when `gh pr create/merge/close/review` is executed:
-
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "npx -y sai-kaneko-31/cc-statusline --invalidate-cache"
-          }
-        ]
-      }
-    ]
-  }
-}
-```
+PR number, URL, and review state come from Claude Code's stdin `pr.*` fields — no `gh` CLI, cache, or hook required. The PR number renders as an OSC8 clickable link to the PR URL, and `pr.review_state` drives the review icon.
 
 ## Colleague comments (optional)
 
