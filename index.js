@@ -53,8 +53,10 @@ if (generateCommentIdx !== -1) {
       env,
     }).trim();
 
-    // Sanitize: collapse to single line, truncate to 120 chars
-    const result = raw.replace(/[\r\n]+/g, ' ').slice(0, 80);
+    // Sanitize: collapse to single line. Cap to 200 codepoints (not UTF-16
+    // units, so we don't split a surrogate pair mid-emoji); final cell-width
+    // truncation happens at display time via truncStrVisual.
+    const result = [...raw.replace(/[\r\n]+/g, ' ')].slice(0, 200).join('');
 
     if (result) {
       const homeDir = os.homedir();
@@ -212,11 +214,62 @@ function padEnd(str, len) {
   return str.length < len ? str + ' '.repeat(len - str.length) : str;
 }
 
-// Truncate string with ellipsis if too long
+// Truncate string with ellipsis if too long (UTF-16 unit based).
+// Used by the 2-line column layout (path/model/branch) where surrounding
+// width arithmetic (rawCol1, padEnd) also uses .length \u2014 switching this
+// to visual width would desync the column alignment for wide-char paths.
 function truncStr(str, maxLen) {
   if (str.length <= maxLen) return str;
   if (maxLen < 2) return str.slice(0, 1);
   return str.slice(0, maxLen - 1) + '\u2026';
+}
+
+// Visual display width: CJK / fullwidth / emoji count as 2 cells, rest as 1.
+// Used only by truncStrVisual below, which handles the colleague comment
+// line where wide-char content (Japanese, emoji) is common.
+function visualWidth(str) {
+  let w = 0;
+  for (const ch of str) {
+    const code = ch.codePointAt(0);
+    if (
+      (code >= 0x1100 && code <= 0x115F) ||      // Hangul Jamo
+      (code >= 0x2600 && code <= 0x27BF) ||      // Misc Symbols + Dingbats (\u26a1 \u2764 \u2728)
+      (code >= 0x2E80 && code <= 0x303F) ||      // CJK Radicals / Symbols / Punctuation
+      (code >= 0x3041 && code <= 0x33FF) ||      // Hiragana / Katakana / CJK Symbols
+      (code >= 0x3400 && code <= 0x4DBF) ||      // CJK Extension A
+      (code >= 0x4E00 && code <= 0x9FFF) ||      // CJK Unified Ideographs
+      (code >= 0xA000 && code <= 0xA4CF) ||      // Yi
+      (code >= 0xAC00 && code <= 0xD7A3) ||      // Hangul Syllables
+      (code >= 0xF900 && code <= 0xFAFF) ||      // CJK Compatibility Ideographs
+      (code >= 0xFE30 && code <= 0xFE4F) ||      // CJK Compatibility Forms
+      (code >= 0xFF00 && code <= 0xFF60) ||      // Fullwidth forms
+      (code >= 0xFFE0 && code <= 0xFFE6) ||      // Fullwidth signs
+      (code >= 0x1F300 && code <= 0x1F9FF) ||    // Emoji: pictographs / emoticons / etc.
+      (code >= 0x1FA70 && code <= 0x1FAFF)       // Emoji extended
+    ) {
+      w += 2;
+    } else {
+      w += 1;
+    }
+  }
+  return w;
+}
+
+// Truncate to maxWidth visual cells (CJK/emoji = 2), appending ellipsis.
+// Use this for free-form text (Japanese colleague comments) where the
+// caller's budget is in terminal cells rather than UTF-16 units.
+function truncStrVisual(str, maxWidth) {
+  if (visualWidth(str) <= maxWidth) return str;
+  if (maxWidth < 2) return [...str][0] || '';
+  let w = 0;
+  let result = '';
+  for (const ch of str) {
+    const chWidth = visualWidth(ch);
+    if (w + chWidth > maxWidth - 1) break; // reserve 1 cell for ellipsis
+    result += ch;
+    w += chWidth;
+  }
+  return result + '\u2026';
 }
 
 // Directory: replace $HOME with ~
@@ -433,6 +486,6 @@ if (colleagueInstruction !== null) {
 let output = `${line1}\n${line2}`;
 if (cachedComment) {
   const commentMaxLen = Math.max(20, termCols - 4);
-  output += `\n${T.dim}${ICON_COMMENT} ${truncStr(cachedComment, commentMaxLen)}${RESET}`;
+  output += `\n${T.dim}${ICON_COMMENT} ${truncStrVisual(cachedComment, commentMaxLen)}${RESET}`;
 }
 process.stdout.write(output);
