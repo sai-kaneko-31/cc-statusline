@@ -1,7 +1,7 @@
 {
   "name": "cc-statusline",
   "version": "1.0.0",
-  "description": "Claude Code statusline with Nerd Font icons, OSC8 PR links, and context window bar",
+  "description": "Claude Code statusline with Nerd Font icons, a context window bar, and rate limit usage",
   "main": "index.js",
   "bin": {
     "cc-statusline": "./index.js"

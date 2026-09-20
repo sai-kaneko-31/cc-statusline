@@ -1,0 +1,10 @@
+{
+  "base": "main",
+  "review_effort": "high",
+  "max_rounds": 12,
+  "ci": "gh",
+  "gates": [
+    { "name": "lint", "cmd": "npm run lint" },
+    { "name": "tests", "cmd": "npm test" }
+  ]
+}
