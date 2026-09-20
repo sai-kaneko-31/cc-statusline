@@ -657,20 +657,29 @@ describe('worktree and session name', () => {
   });
 });
 
-// Visual cell width, matching index.js: CJK / fullwidth / emoji take 2 cells.
+// Visual cell width. The ranges are copied from index.js's visualWidth and
+// must stay identical: this is the only check on the width contract, so a
+// different width model here would measure something the command never used.
+// `test/width-ranges.test.js` fails if the two drift apart.
 function visualWidth(str) {
   let w = 0;
   for (const ch of str) {
-    const cp = ch.codePointAt(0);
+    const code = ch.codePointAt(0);
     const wide =
-      (cp >= 0x1100 && cp <= 0x115f) ||
-      (cp >= 0x2e80 && cp <= 0xa4cf) ||
-      (cp >= 0xac00 && cp <= 0xd7a3) ||
-      (cp >= 0xf900 && cp <= 0xfaff) ||
-      (cp >= 0xfe30 && cp <= 0xfe6f) ||
-      (cp >= 0xff00 && cp <= 0xff60) ||
-      (cp >= 0xffe0 && cp <= 0xffe6) ||
-      (cp >= 0x1f300 && cp <= 0x1faff);
+      (code >= 0x1100 && code <= 0x115F) ||
+      (code >= 0x2600 && code <= 0x27BF) ||
+      (code >= 0x2E80 && code <= 0x303F) ||
+      (code >= 0x3041 && code <= 0x33FF) ||
+      (code >= 0x3400 && code <= 0x4DBF) ||
+      (code >= 0x4E00 && code <= 0x9FFF) ||
+      (code >= 0xA000 && code <= 0xA4CF) ||
+      (code >= 0xAC00 && code <= 0xD7A3) ||
+      (code >= 0xF900 && code <= 0xFAFF) ||
+      (code >= 0xFE30 && code <= 0xFE4F) ||
+      (code >= 0xFF00 && code <= 0xFF60) ||
+      (code >= 0xFFE0 && code <= 0xFFE6) ||
+      (code >= 0x1F300 && code <= 0x1F9FF) ||
+      (code >= 0x1FA70 && code <= 0x1FAFF);
     w += wide ? 2 : 1;
   }
   return w;
@@ -681,9 +690,12 @@ describe('rendered lines fit the terminal', () => {
   // has a floor of 30, and the columns have floors of their own.
   const MIN_SUPPORTED_COLS = 60;
 
+  // Every cwd here is outside a git repo. Pointing one at this checkout would
+  // make the column widths depend on the path and the branch name, which
+  // differ between a working copy and CI's detached checkout.
   const inputs = [
     ['everything at once', {
-      cwd: REPO_CWD,
+      cwd: '/home/u/projects/a-fairly-long-project-directory',
       model: { display_name: 'Opus 5 (1M context)' },
       effort: { level: 'xhigh' },
       context_window: { used_percentage: 55 },
@@ -703,12 +715,42 @@ describe('rendered lines fit the terminal', () => {
       prompt_cache: { warm: false },
     }],
     ['Japanese session name', {
-      cwd: REPO_CWD,
+      cwd: '/home/u/projects/another-directory',
       model: { display_name: 'Opus 5' },
       effort: { level: 'medium' },
       context_window: { used_percentage: 80 },
       session_name: 'ステータスラインの作り直しと幅の計算',
       rate_limits: { five_hour: { used_percentage: 42 } },
+    }],
+    // The columns are sized in characters, so a wide-char segment renders
+    // wider than the column it was sized for.
+    ['Japanese worktree name', {
+      cwd: '/home/u/.claude/worktrees/nihongo',
+      model: { display_name: 'Opus 5' },
+      context_window: { used_percentage: 30 },
+      worktree: { name: '日本語のワークツリーの名前がとても長い場合' },
+      session_name: 'session-name',
+      prompt_cache: { warm: true },
+    }],
+    ['Japanese cwd and session name', {
+      cwd: '/home/u/プロジェクト/サブディレクトリ/さらに深いところ',
+      model: { display_name: 'Opus 5' },
+      effort: { level: 'high' },
+      context_window: { used_percentage: 30 },
+      session_name: 'セッションの名前も日本語',
+      rate_limits: { five_hour: { used_percentage: 55 }, seven_day: { used_percentage: 12 } },
+    }],
+    // A wide-char segment SHORTER than its column: padEnd still pads it out
+    // to the column's character count, so the cells are the segment's own
+    // width plus that padding, not the larger of the two.
+    ['short Japanese worktree name in a wide column', {
+      cwd: '/home/u/.claude/worktrees/w',
+      model: { display_name: 'Opus 5' },
+      effort: { level: 'xhigh' },
+      context_window: { used_percentage: 30 },
+      worktree: { name: '日本語' },
+      session_name: 'a-session-name-long-enough-to-use-the-room',
+      rate_limits: { five_hour: { used_percentage: 20 } },
     }],
     ['outside a git repo', {
       cwd: '/tmp',

@@ -253,6 +253,14 @@ function padEnd(str, len) {
   return str.length < len ? str + ' '.repeat(len - str.length) : str;
 }
 
+// Cells that padEnd(str, len) occupies on screen. The column widths count
+// characters, so a segment holding wide characters renders wider than the
+// column it was sized for; anything measuring a whole line needs this.
+// Defined below visualWidth, which it calls — both are hoisted.
+function paddedWidth(str, len) {
+  return visualWidth(str) + Math.max(0, len - str.length);
+}
+
 // Truncate string with ellipsis if too long (UTF-16 unit based).
 // Used by the 2-line column layout (path/model/branch) where surrounding
 // width arithmetic (rawCol1, padEnd) also uses .length \u2014 switching this
@@ -438,11 +446,10 @@ if (sessionName) {
   // icon+space(2) + col1, then COL_SEP+icon+space(4) before each of the
   // branch and the ahead/behind segments. The branch segment is absent
   // outside a git repo, which is where the extra room shows up.
-  const aheadBehindLen = (gitAheadBehind || '-').length;
   const line1Len =
-    2 + col1Len +
-    (gitBranch ? 4 + col2Len : 0) +
-    4 + aheadBehindLen + statsText.length;
+    2 + paddedWidth(displayDirTrunc, col1Len) +
+    (gitBranch ? 4 + paddedWidth(gitBranchTrunc, col2Len) : 0) +
+    4 + visualWidth(gitAheadBehind || '-') + visualWidth(statsText);
   const sessionRoom = termCols - line1Len - 4; // COL_SEP(2) + icon(1) + space(1)
   if (sessionRoom >= 4) {
     const label = truncStrVisual(sessionName, sessionRoom);
