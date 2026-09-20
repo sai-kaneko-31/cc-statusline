@@ -24,14 +24,11 @@ if (generateCommentIdx !== -1) {
     const filesStr = files.length > 0 ? files.join(', ') : '';
     const commits = (recentCommits || []).slice(0, 3);
     const durationMin = durationMs ? Math.floor(durationMs / 60000) : null;
-    const prevStr = (previousComments || []).length > 0
-      ? `\nAlready said (do not repeat these, or their angle): ${previousComments.map((c) => `"${c}"`).join(', ')}`
-      : '';
-
     // Commit subjects, file names and branch names are free text written by
-    // whoever wrote the repository — a clone carries someone else's. Flatten
-    // to one line, cap the length, and drop the quotes and backslashes that
-    // would let a value close the field it sits in.
+    // whoever wrote the repository — a clone carries someone else's. Past
+    // comments are model output shaped by that same text, read back from the
+    // cache. Flatten each to one line, cap the length, and drop the quotes
+    // and backslashes that would let a value close the field it sits in.
     const asData = (str, maxLen = 80) =>
       [...String(str)]
         .map((ch) => {
@@ -42,6 +39,10 @@ if (generateCommentIdx !== -1) {
         .slice(0, maxLen)
         .join('')
         .trim();
+
+    const prevStr = (previousComments || []).length > 0
+      ? `\nAlready said (do not repeat these, or their angle): ${previousComments.map((c) => `"${asData(c, 200)}"`).join(', ')}`
+      : '';
 
     // Build context fields, omitting empty/unknown values. Order matters: the
     // model reaches for the first concrete thing it sees, so what the session
@@ -275,33 +276,89 @@ function padEnd(str, width) {
   return w < width ? str + ' '.repeat(width - w) : str;
 }
 
-// Visual display width: CJK / fullwidth / emoji count as 2 cells, rest as 1.
+// Code point ranges that occupy two terminal cells: East Asian Wide and
+// Fullwidth from the Unicode table, plus the emoji blocks. Generated from
+// unicodedata, not hand-listed — picking ranges by hand left ⭐ ⏰ ⬛ and the
+// CJK extension planes counting as one cell, which broke the width contract
+// by tens of cells on a single line.
+const WIDE_RANGES = [
+  [0x1100, 0x115F],
+  [0x231A, 0x231B],
+  [0x2329, 0x232A],
+  [0x23E9, 0x23EC],
+  [0x23F0, 0x23F0],
+  [0x23F3, 0x23F3],
+  [0x25FD, 0x25FE],
+  [0x2600, 0x27BF],
+  [0x2B1B, 0x2B1C],
+  [0x2B50, 0x2B50],
+  [0x2B55, 0x2B55],
+  [0x2E80, 0x2E99],
+  [0x2E9B, 0x2EF3],
+  [0x2F00, 0x2FD5],
+  [0x2FF0, 0x2FFB],
+  [0x3000, 0x303E],
+  [0x3041, 0x3096],
+  [0x3099, 0x30FF],
+  [0x3105, 0x312F],
+  [0x3131, 0x318E],
+  [0x3190, 0x31E3],
+  [0x31F0, 0x321E],
+  [0x3220, 0x3247],
+  [0x3250, 0x4DBF],
+  [0x4E00, 0xA48C],
+  [0xA490, 0xA4C6],
+  [0xA960, 0xA97C],
+  [0xAC00, 0xD7A3],
+  [0xF900, 0xFAFF],
+  [0xFE10, 0xFE19],
+  [0xFE30, 0xFE52],
+  [0xFE54, 0xFE66],
+  [0xFE68, 0xFE6B],
+  [0xFF01, 0xFF60],
+  [0xFFE0, 0xFFE6],
+  [0x16FE0, 0x16FE4],
+  [0x16FF0, 0x16FF1],
+  [0x17000, 0x187F7],
+  [0x18800, 0x18CD5],
+  [0x18D00, 0x18D08],
+  [0x1AFF0, 0x1AFF3],
+  [0x1AFF5, 0x1AFFB],
+  [0x1AFFD, 0x1AFFE],
+  [0x1B000, 0x1B122],
+  [0x1B132, 0x1B132],
+  [0x1B150, 0x1B152],
+  [0x1B155, 0x1B155],
+  [0x1B164, 0x1B167],
+  [0x1B170, 0x1B2FB],
+  [0x1F004, 0x1F004],
+  [0x1F0CF, 0x1F0CF],
+  [0x1F18E, 0x1F18E],
+  [0x1F191, 0x1F19A],
+  [0x1F200, 0x1F202],
+  [0x1F210, 0x1F23B],
+  [0x1F240, 0x1F248],
+  [0x1F250, 0x1F251],
+  [0x1F260, 0x1F265],
+  [0x1F300, 0x1F9FF],
+  [0x1FA70, 0x1FAFF],
+  [0x20000, 0x2FFFD],
+  [0x30000, 0x3FFFD],
+];
+
+// Visual display width: a wide code point counts as 2 cells, the rest as 1.
 // Every width in the layout is measured here — column widths, truncation
 // and padding — so that what the arithmetic counts is what the terminal draws.
 function visualWidth(str) {
   let w = 0;
   for (const ch of str) {
     const code = ch.codePointAt(0);
-    if (
-      (code >= 0x1100 && code <= 0x115F) ||      // Hangul Jamo
-      (code >= 0x2600 && code <= 0x27BF) ||      // Misc Symbols + Dingbats (\u26a1 \u2764 \u2728)
-      (code >= 0x2E80 && code <= 0x303F) ||      // CJK Radicals / Symbols / Punctuation
-      (code >= 0x3041 && code <= 0x33FF) ||      // Hiragana / Katakana / CJK Symbols
-      (code >= 0x3400 && code <= 0x4DBF) ||      // CJK Extension A
-      (code >= 0x4E00 && code <= 0x9FFF) ||      // CJK Unified Ideographs
-      (code >= 0xA000 && code <= 0xA4CF) ||      // Yi
-      (code >= 0xAC00 && code <= 0xD7A3) ||      // Hangul Syllables
-      (code >= 0xF900 && code <= 0xFAFF) ||      // CJK Compatibility Ideographs
-      (code >= 0xFE30 && code <= 0xFE4F) ||      // CJK Compatibility Forms
-      (code >= 0xFF00 && code <= 0xFF60) ||      // Fullwidth forms
-      (code >= 0xFFE0 && code <= 0xFFE6) ||      // Fullwidth signs
-      (code >= 0x1F300 && code <= 0x1F9FF) ||    // Emoji: pictographs / emoticons / etc.
-      (code >= 0x1FA70 && code <= 0x1FAFF)       // Emoji extended
-    ) {
-      w += 2;
-    } else {
-      w += 1;
+    let wide = false;
+    for (const [lo, hi] of WIDE_RANGES) {
+      if (code < lo) break;
+      if (code <= hi) { wide = true; break; }
     }
+    w += wide ? 2 : 1;
   }
   return w;
 }
@@ -414,18 +471,20 @@ const COLS_FLOOR = 30;
 // Rate limits go first: the context bar is what the status line is for.
 let showCache = cacheWarm !== null;
 let showRate = rateText !== '';
-const outsideNow = () =>
-  Math.max(
-    line1Outside,
-    2 +                                 // model icon + space
-    4 +                                 // COL_SEP + heart icon + space
-    (showCache ? 2 : 0) +               // space + cache icon
-    (showRate ? 4 + visualWidth(rateText) : 0) // COL_SEP + meter icon + space
-  );
-if (showRate && termCols - outsideNow() < COLS_FLOOR) showRate = false;
-if (showCache && termCols - outsideNow() < COLS_FLOOR) showCache = false;
+const line2Outside = () =>
+  2 +                                   // model icon + space
+  4 +                                   // COL_SEP + heart icon + space
+  (showCache ? 2 : 0) +                 // space + cache icon
+  (showRate ? 4 + visualWidth(rateText) : 0); // COL_SEP + meter icon + space
+// Only line 2's own width decides what line 2 gives up. Line 1's tail can be
+// the longer of the two, and dropping segments off line 2 does nothing for it.
+if (showRate && termCols - line2Outside() < COLS_FLOOR) showRate = false;
+if (showCache && termCols - line2Outside() < COLS_FLOOR) showCache = false;
 
-const maxContentCols = Math.max(COLS_FLOOR, termCols - outsideNow());
+const maxContentCols = Math.max(
+  COLS_FLOOR,
+  termCols - Math.max(line1Outside, line2Outside())
+);
 
 // Effort rides inside the model segment as "Opus 5 (high)".
 const rawEffortSuffix = effortLevel ? ` (${effortLevel})` : '';
@@ -445,13 +504,15 @@ if (rawCol1 + rawCol2 <= maxContentCols) {
 }
 
 const displayDirTrunc = truncStrVisual(displayDir, col1Len);
-// Keep at least this many cells of the model name; the model matters more
-// than the effort level, so a column too narrow for both loses the effort.
+// Keep at least this many cells of the model name; a column too narrow for
+// both loses the effort, because the model matters more. A short model name
+// is not "too narrow": the column already reserved room for both, so the
+// floor applies only once the column has actually been squeezed.
 const MODEL_MIN_CELLS = 5;
-const effortSuffix =
-  rawEffortSuffix && col1Len - visualWidth(rawEffortSuffix) >= MODEL_MIN_CELLS
-    ? rawEffortSuffix
-    : '';
+const effortFits =
+  col1Len >= visualWidth(model) + visualWidth(rawEffortSuffix) ||
+  col1Len - visualWidth(rawEffortSuffix) >= MODEL_MIN_CELLS;
+const effortSuffix = rawEffortSuffix && effortFits ? rawEffortSuffix : '';
 const modelTrunc = truncStrVisual(model, col1Len - visualWidth(effortSuffix));
 const gitBranchTrunc = truncStrVisual(gitBranch, col2Len);
 

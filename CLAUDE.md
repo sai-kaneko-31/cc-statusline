@@ -79,7 +79,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - Comment prompt asks for ONE sentence within 30 Japanese / 60 English characters — the display truncates to one line, so asking for more just throws away the tail
 - Comment dedup lists what was already said and rules out repeating its angle, not just its wording
 - Comment output sanitized: newlines collapsed, capped to 200 codepoints at generation (safety net, surrogate-pair safe)
-- Comment display uses `truncStrVisual` (visual-cell width: CJK/emoji = 2 cells); separate from char-based `truncStr` for path/model/branch layout
+- `WIDE_RANGES` is generated from the Unicode East Asian Width table plus the emoji blocks, not hand-listed; `test/width-ranges.test.js` fails if the copy in the test file drifts from it
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model> --no-session-persistence` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
