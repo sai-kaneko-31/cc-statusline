@@ -136,6 +136,25 @@ describe('statusline', () => {
     assert.equal(lines.length, 2);
   });
 
+  it('non-ASCII cwd column truncation stays in char units, not visual cells', () => {
+    // Regression guard for truncStr semantics. With COLUMNS=50, col1Len is
+    // forced down to ~15 chars, so a 29-char wide-char path DOES trigger
+    // truncation. Under char-based truncStr (correct), 'プロジェクト' fits
+    // in the first 14 chars + ellipsis. Under visual-cell truncStr (the
+    // regression), the kana run would be cut at 'プロジェ…' because each
+    // wide char counts as 2 cells against the same 15 budget.
+    const longCwd = '/tmp/プロジェクト/サブディレクトリ/さらに深いところ';
+    const result = runWithArgs(
+      { cwd: longCwd, model: { display_name: 'Opus 4.6' } },
+      [],
+      { env: { ...process.env, COLUMNS: '50' } }
+    );
+    assert.equal(result.exitCode, 0);
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('プロジェクト'), `char-based truncStr must keep 'プロジェクト' intact: ${JSON.stringify(plain)}`);
+    assert.ok(!plain.includes('プロジェ…'), `must not cut at visual-cell boundary 'プロジェ…': ${JSON.stringify(plain)}`);
+  });
+
   it('invalid JSON exits with 0 and no output', () => {
     const result = run('not json');
     assert.equal(result.exitCode, 0);
@@ -299,6 +318,125 @@ describe('colleague comments', () => {
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 2, 'should output 2 lines when cache is stale');
+    } finally {
+      cleanCommentCache();
+    }
+  });
+
+  // Visual-cell width helper mirroring index.js#visualWidth so tests can assert
+  // the post-truncation body stays within terminal columns regardless of the
+  // mix of ASCII / kana / kanji / emoji / dingbats in the input.
+  function vw(s) {
+    let w = 0;
+    for (const ch of s) {
+      const c = ch.codePointAt(0);
+      const wide =
+        (c >= 0x1100 && c <= 0x115F) ||
+        (c >= 0x2600 && c <= 0x27BF) ||
+        (c >= 0x2E80 && c <= 0x303F) ||
+        (c >= 0x3041 && c <= 0x33FF) ||
+        (c >= 0x3400 && c <= 0x4DBF) ||
+        (c >= 0x4E00 && c <= 0x9FFF) ||
+        (c >= 0xA000 && c <= 0xA4CF) ||
+        (c >= 0xAC00 && c <= 0xD7A3) ||
+        (c >= 0xF900 && c <= 0xFAFF) ||
+        (c >= 0xFE30 && c <= 0xFE4F) ||
+        (c >= 0xFF00 && c <= 0xFF60) ||
+        (c >= 0xFFE0 && c <= 0xFFE6) ||
+        (c >= 0x1F300 && c <= 0x1F9FF) ||
+        (c >= 0x1FA70 && c <= 0x1FAFF);
+      w += wide ? 2 : 1;
+    }
+    return w;
+  }
+
+  // Render a cached comment under COLUMNS=40 and return the comment-line body
+  // (after the icon + space prefix) along with the full stripped line.
+  function renderCachedComment(comment, columns = '40') {
+    fs.mkdirSync(path.dirname(COMMENT_CACHE), { recursive: true });
+    fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment }));
+    const result = runWithArgs(stdinData, ['--colleague-instruction', 'test'], {
+      env: { ...process.env, COLUMNS: columns },
+    });
+    assert.equal(result.exitCode, 0);
+    const lines = result.stdout.split('\n');
+    assert.equal(lines.length, 3, 'should still emit a comment line');
+    const commentLine = stripAnsi(lines[2]);
+    // Strip leading icon (private-use Nerd Font glyph, 1 cell) and the space.
+    const body = commentLine.replace(/^[^\s]\s/, '');
+    return { commentLine, body };
+  }
+
+  it('long Japanese comment is truncated at visual-cell budget with ellipsis', () => {
+    cleanCommentCache();
+    try {
+      // 60 hiragana chars = ~120 visual cells; with COLUMNS=40 (budget=36),
+      // the comment must be cut and end with …
+      const longComment = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんあいうえおかきくけこ';
+      const { body } = renderCachedComment(longComment);
+      assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
+      assert.ok(vw(body) <= 36, `truncated body visual width ${vw(body)} should fit COLUMNS-4=36`);
+    } finally {
+      cleanCommentCache();
+    }
+  });
+
+  it('long ASCII comment is truncated with ellipsis (legacy code-unit semantics preserved)', () => {
+    cleanCommentCache();
+    try {
+      // 80 ASCII chars = 80 visual cells; with COLUMNS=40 (budget=36),
+      // the legacy behavior was: result length === budget (35 chars + …).
+      // visualWidth(ASCII)==length, so the new semantics must produce the
+      // identical output for ASCII-only input.
+      const longComment = 'a'.repeat(80);
+      const { body } = renderCachedComment(longComment);
+      assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
+      // ASCII => visual width === string length; truncated to exactly budget.
+      assert.equal(body.length, 36, `ASCII truncation length should equal budget: got ${body.length}`);
+      assert.equal(vw(body), 36, `ASCII visual width should equal budget`);
+      // The kept prefix must be the original characters (no width-rounding loss).
+      assert.equal(body.slice(0, 35), 'a'.repeat(35));
+    } finally {
+      cleanCommentCache();
+    }
+  });
+
+  it('long CJK ideograph comment is truncated at visual-cell budget', () => {
+    cleanCommentCache();
+    try {
+      // 「漢」 = U+6F22 (CJK Unified Ideographs, range 0x4E00-0x9FFF, width 2).
+      // 40 kanji = 80 cells; budget 36 => must be cut.
+      const longComment = '漢'.repeat(40);
+      const { body } = renderCachedComment(longComment);
+      assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
+      assert.ok(vw(body) <= 36, `CJK truncated body width ${vw(body)} should fit budget=36`);
+    } finally {
+      cleanCommentCache();
+    }
+  });
+
+  it('long emoji comment is truncated at visual-cell budget', () => {
+    cleanCommentCache();
+    try {
+      // 🎉 = U+1F389 (Emoji pictograph, range 0x1F300-0x1F9FF, width 2).
+      // 30 emoji = 60 cells; budget 36 => must be cut.
+      const longComment = '🎉'.repeat(30);
+      const { body } = renderCachedComment(longComment);
+      assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
+      assert.ok(vw(body) <= 36, `emoji truncated body width ${vw(body)} should fit budget=36`);
+    } finally {
+      cleanCommentCache();
+    }
+  });
+
+  it('comment fitting within budget is passed through unchanged (no ellipsis)', () => {
+    cleanCommentCache();
+    try {
+      // 10 hiragana = 20 cells, fits comfortably in budget=36.
+      const shortComment = 'おつかれさまです！';
+      const { body } = renderCachedComment(shortComment);
+      assert.ok(!body.endsWith('…'), `should not append ellipsis when within budget: ${JSON.stringify(body)}`);
+      assert.ok(body.startsWith(shortComment), `should keep full text: got ${JSON.stringify(body)}`);
     } finally {
       cleanCommentCache();
     }
