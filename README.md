@@ -13,7 +13,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 |---------|-------------|
 | Nerd Font icons | Model-specific icons (Opus ``, Sonnet ``, Haiku ``) |
 | Context window bar | Context window remaining until auto-compact (85%), color-coded |
-| Rate limit usage | 5-hour and 7-day window usage, from `rate_limits` |
+| Rate limit usage | 5-hour and 7-day window usage, from `rate_limits`; dropped first on a narrow terminal |
 | Prompt cache warmth | Fire / snowflake next to the bar, from `prompt_cache.warm` |
 | Git stats | Branch, ahead/behind, insertions/deletions |
 | Worktree and session | Worktree name in place of the path, session name on line 1 |
@@ -73,6 +73,8 @@ Every segment past the branch is optional and simply absent when Claude Code doe
 ### Rate limit usage
 
 `rate_limits.five_hour` and `rate_limits.seven_day` render as `5h <n>% 7d <n>%`. Claude Code sends them to claude.ai Pro and Max subscribers after the first API response, and drops each window once its `resets_at` passes, so either half can be missing.
+
+On a terminal too narrow to hold the columns and the whole tail, line 2 drops the rate limits first and then the cache icon, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge below roughly 60 columns.
 
 ### Prompt cache warmth
 

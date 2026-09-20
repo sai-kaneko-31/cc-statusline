@@ -84,7 +84,11 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
 - Effort level: stdin `effort.level` preferred, `~/.claude/settings.json` `effortLevel` as fallback; rendered inside the model segment as `Opus 5 (high)`
-- Terminal width detection: `process.stderr.columns` → `COLUMNS` env → default 100; columns dynamically capped to fit
+- Terminal width detection: `process.stderr.columns` → `COLUMNS` env → default 100
+- Width arithmetic is in terminal cells throughout (`visualWidth`): column widths, truncation (`truncStrVisual`) and padding (`padEnd`). Mixing in `.length` puts a wide-char segment past its column and the line past the terminal edge
+- Column widths are sized against whichever line spends more outside them. Both tails vary (ahead/behind + diff stats on line 1, rate limits on line 2), so a constant cannot stand in for that
+- On a terminal too narrow for the columns' floor plus the tail, line 2 drops rate limits and then the cache icon. Line 1's tail is not optional, so a long branch with large diff stats still overflows below roughly 60 columns
+- Free text from the repository (commit subjects, file names, branch and worktree names) is flattened, stripped of quotes and backslashes, and capped before it enters the `claude -p` prompt; the prompt also states that the context is data
 - Model display_name parenthetical suffix (e.g. "(1M context)") auto-stripped
 
 ## Environment Variables
@@ -114,4 +118,4 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - Tests use `process.execPath` (not `'node'`) for portability; `claude` CLI tests are skipped when not authenticated
 - GitHub repo rules require PRs to merge into main (direct push rejected); merge commits disabled, use `gh pr merge --squash`
 - Claude Code's statusline renderer truncates lines with too many ANSI escape sequences; keep transitions minimal (≤6 per line), avoid mid-bar color switching
-- No full-width characters in the layout: effort moved into `(...)` precisely so every column width is plain `.length`. Adding an emoji back reintroduces the +1 correction that used to be needed for ⚡ (U+26A1)
+- Effort renders as `(high)` rather than an emoji, so the model segment needs no width correction of its own
