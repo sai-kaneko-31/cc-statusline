@@ -629,17 +629,139 @@ describe('worktree and session name', () => {
   });
 
   it('session_name is dropped when the terminal is too narrow', () => {
-    const result = runWithArgs({ ...base, session_name: 'secrets-migration' }, [], {
+    // A git repo cwd, where the branch segment takes the room the name needs.
+    const result = runWithArgs({ ...base, cwd: REPO_CWD, session_name: 'secrets-migration' }, [], {
       env: { ...process.env, COLUMNS: '40' },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const plain = stripAnsi(result.stdout);
-    assert.ok(!plain.includes('secrets-migration'), 'should drop the name rather than overflow');
+    assert.ok(!plain.includes('secrets-mi'), 'should drop the name rather than overflow');
     assert.ok(!result.stdout.includes('\uF0C5'), 'should not show the session icon');
+  });
+
+  it('outside a git repo the name keeps the room the branch would have taken', () => {
+    // The branch segment is absent here, so the same width fits more of the
+    // name than it would inside a repo.
+    const result = runWithArgs({ ...base, session_name: 'abcdefghij-abcdefghij-abcdefghij-ab' }, [], {
+      env: { ...process.env, COLUMNS: '80' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const line1 = stripAnsi(result.stdout).split('\n')[0];
+    assert.ok(line1.includes('abcdefghij-abcdefghij-abcdefghij-ab'),
+      `should fit the whole name: ${line1}`);
   });
 
   it('no session icon when session_name is absent', () => {
     const result = runWide(base);
     assert.ok(!result.stdout.includes('\uF0C5'), 'should not show the session icon');
+  });
+});
+
+// Visual cell width, matching index.js: CJK / fullwidth / emoji take 2 cells.
+function visualWidth(str) {
+  let w = 0;
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    const wide =
+      (cp >= 0x1100 && cp <= 0x115f) ||
+      (cp >= 0x2e80 && cp <= 0xa4cf) ||
+      (cp >= 0xac00 && cp <= 0xd7a3) ||
+      (cp >= 0xf900 && cp <= 0xfaff) ||
+      (cp >= 0xfe30 && cp <= 0xfe6f) ||
+      (cp >= 0xff00 && cp <= 0xff60) ||
+      (cp >= 0xffe0 && cp <= 0xffe6) ||
+      (cp >= 0x1f300 && cp <= 0x1faff);
+    w += wide ? 2 : 1;
+  }
+  return w;
+}
+
+describe('rendered lines fit the terminal', () => {
+  // Below this the layout reserves more than the terminal has: maxContentCols
+  // has a floor of 30, and the columns have floors of their own.
+  const MIN_SUPPORTED_COLS = 60;
+
+  const inputs = [
+    ['everything at once', {
+      cwd: REPO_CWD,
+      model: { display_name: 'Opus 5 (1M context)' },
+      effort: { level: 'xhigh' },
+      context_window: { used_percentage: 55 },
+      session_name: 'a-very-long-session-name-that-keeps-going-and-going',
+      rate_limits: {
+        five_hour: { used_percentage: 100 },
+        seven_day: { used_percentage: 100 },
+      },
+      prompt_cache: { warm: true },
+    }],
+    ['long worktree name', {
+      cwd: '/home/u/.claude/worktrees/a-long-worktree-name',
+      model: { display_name: 'Sonnet 4.6' },
+      worktree: { name: 'a-long-worktree-name-that-keeps-going' },
+      context_window: { used_percentage: 5 },
+      rate_limits: { seven_day: { used_percentage: 7 } },
+      prompt_cache: { warm: false },
+    }],
+    ['Japanese session name', {
+      cwd: REPO_CWD,
+      model: { display_name: 'Opus 5' },
+      effort: { level: 'medium' },
+      context_window: { used_percentage: 80 },
+      session_name: 'ステータスラインの作り直しと幅の計算',
+      rate_limits: { five_hour: { used_percentage: 42 } },
+    }],
+    ['outside a git repo', {
+      cwd: '/tmp',
+      model: { display_name: 'Haiku 4.5' },
+      context_window: { used_percentage: 30 },
+      session_name: 'no-branch-here-but-a-long-name',
+      rate_limits: { five_hour: { used_percentage: 3 }, seven_day: { used_percentage: 9 } },
+      prompt_cache: { warm: true },
+    }],
+  ];
+
+  for (const [label, data] of inputs) {
+    for (const cols of [MIN_SUPPORTED_COLS, 80, 100, 120]) {
+      it(`${label} fits COLUMNS=${cols}`, () => {
+        const result = runWithArgs(data, [], {
+          env: { ...process.env, COLUMNS: String(cols) },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
+        assert.equal(result.exitCode, 0);
+        const lines = stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
+        assert.ok(lines.length >= 2, 'should print both lines');
+        for (const [i, line] of lines.entries()) {
+          const w = visualWidth(line);
+          assert.ok(w <= cols, `line ${i + 1} is ${w} cells, over ${cols}: ${line}`);
+        }
+      });
+    }
+  }
+});
+
+describe('model name outranks effort when the column is tight', () => {
+  const data = {
+    cwd: REPO_CWD,
+    model: { display_name: 'Opus 5' },
+    effort: { level: 'xhigh' },
+    context_window: { used_percentage: 55 },
+  };
+
+  function line2At(cols) {
+    const result = runWithArgs(data, [], {
+      env: { ...process.env, COLUMNS: String(cols) },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return stripAnsi(result.stdout).split('\n')[1];
+  }
+
+  it('keeps both when the column is wide enough', () => {
+    assert.ok(line2At(120).includes('Opus 5 (xhigh)'), line2At(120));
+  });
+
+  it('drops the effort rather than truncating the model name', () => {
+    const line2 = line2At(60);
+    assert.ok(line2.includes('Opus 5'), `should keep the model name: ${line2}`);
+    assert.ok(!line2.includes('xhigh'), `should drop the effort: ${line2}`);
   });
 });

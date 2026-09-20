@@ -373,15 +373,17 @@ const ctxVisibleLen = 15; // [██████████]XX%
 // Terminal width detection (stdout piped to Claude Code, try stderr)
 const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
 
-// Line 2 (wider): icon(2) + col1 + COL_SEP(2) + icon(2) + col2 + cache(2) +
-// COL_SEP(2) + icon(2) + rate(16) = col1 + col2 + 26
-const LINE_OVERHEAD = 26;
+// Everything line 2 spends outside the two columns, at its widest:
+// icon+space(2) + COL_SEP+icon+space(4) + space+cache(2) +
+// COL_SEP+icon+space(4) + rate("5h 100% 7d 100%" = 15) = 27.
+// Line 2 is the wider of the two, so the columns are sized against it.
+const LINE_OVERHEAD = 27;
 const maxContentCols = Math.max(30, termCols - LINE_OVERHEAD);
 
 // Effort rides inside the model segment as "Opus 5 (high)", so its width is
 // plain .length — no full-width character to correct for.
-const effortSuffix = effortLevel ? ` (${effortLevel})` : '';
-const rawCol1 = Math.max(displayDir.length, model.length + effortSuffix.length);
+const rawEffortSuffix = effortLevel ? ` (${effortLevel})` : '';
+const rawCol1 = Math.max(displayDir.length, model.length + rawEffortSuffix.length);
 const rawCol2 = Math.max(gitBranch.length, ctxVisibleLen);
 
 let col1Len, col2Len;
@@ -394,8 +396,14 @@ if (rawCol1 + rawCol2 <= maxContentCols) {
 }
 
 const displayDirTrunc = truncStr(displayDir, col1Len);
-const modelMaxLen = effortSuffix ? Math.max(5, col1Len - effortSuffix.length) : col1Len;
-const modelTrunc = truncStr(model, modelMaxLen);
+// Keep at least this much of the model name; the model matters more than the
+// effort level, so a column too narrow for both loses the effort instead.
+const MODEL_MIN_LEN = 5;
+const effortSuffix =
+  rawEffortSuffix && col1Len - rawEffortSuffix.length >= MODEL_MIN_LEN
+    ? rawEffortSuffix
+    : '';
+const modelTrunc = truncStr(model, col1Len - effortSuffix.length);
 const gitBranchTrunc = truncStr(gitBranch, col2Len);
 
 // ── Line 1: path + branch + git stats + session name ──
@@ -427,11 +435,15 @@ if (parseInt(addedStr) > 0 || parseInt(deletedStr) > 0) {
 // column widths are sized for line 2, whose trailing segment is wider. Drop
 // the name rather than let it push the line past the terminal edge.
 if (sessionName) {
-  // icon(2) + col1 + SEP(2) + icon(2) + col2 + SEP(2) + icon(2) + ahead/behind
+  // icon+space(2) + col1, then COL_SEP+icon+space(4) before each of the
+  // branch and the ahead/behind segments. The branch segment is absent
+  // outside a git repo, which is where the extra room shows up.
   const aheadBehindLen = (gitAheadBehind || '-').length;
   const line1Len =
-    2 + col1Len + 2 + 2 + col2Len + 2 + 2 + aheadBehindLen + statsText.length;
-  const sessionRoom = termCols - line1Len - 3; // COL_SEP(2) + icon(1)
+    2 + col1Len +
+    (gitBranch ? 4 + col2Len : 0) +
+    4 + aheadBehindLen + statsText.length;
+  const sessionRoom = termCols - line1Len - 4; // COL_SEP(2) + icon(1) + space(1)
   if (sessionRoom >= 4) {
     const label = truncStrVisual(sessionName, sessionRoom);
     line1 += `${COL_SEP}${T.dim}${ICON_SESSION} ${label}${RESET}`;
