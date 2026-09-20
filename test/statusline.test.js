@@ -178,7 +178,7 @@ describe('statusline', () => {
     assert.ok(!plain.includes('(1M context)'), 'should not include parenthetical suffix');
   });
 
-  it('shows effort level from stdin effort.level with bolt icon', () => {
+  it('shows effort level from stdin effort.level inside the model segment', () => {
     const result = run({
       cwd: '/tmp',
       model: { display_name: 'Opus 4.6' },
@@ -186,8 +186,8 @@ describe('statusline', () => {
       effort: { level: 'high' },
     });
     const plain = stripAnsi(result.stdout);
-    assert.ok(plain.includes('high'), 'should include effort level from stdin');
-    assert.ok(result.stdout.includes('⚡'), 'should include bolt icon');
+    assert.ok(plain.includes('Opus 4.6 (high)'), 'should render as "<model> (<effort>)"');
+    assert.ok(!result.stdout.includes('⚡'), 'should not include the bolt icon');
   });
 
   it('stdin effort.level takes precedence over settings.json effortLevel', () => {
@@ -214,7 +214,7 @@ describe('statusline', () => {
     assert.ok(!plain.includes(settings.effortLevel), `should not show settings effortLevel "${settings.effortLevel}" when stdin provides one`);
   });
 
-  it('shows effort level from settings with bolt icon', () => {
+  it('shows effort level from settings inside the model segment', () => {
     const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
     let settings;
     try {
@@ -231,8 +231,8 @@ describe('statusline', () => {
       context_window: { used_percentage: 30 },
     });
     const plain = stripAnsi(result.stdout);
-    assert.ok(plain.includes(settings.effortLevel), `should include effort level "${settings.effortLevel}"`);
-    assert.ok(result.stdout.includes('\u26A1'), 'should include bolt icon');
+    assert.ok(plain.includes(`(${settings.effortLevel})`), `should include effort level "(${settings.effortLevel})"`);
+    assert.ok(!result.stdout.includes('\u26A1'), 'should not include the bolt icon');
   });
 
   it('git repo cwd shows branch icon', () => {
@@ -443,70 +443,29 @@ describe('colleague comments', () => {
   });
 });
 
-describe('PR review status', () => {
-  // PR info comes from stdin `pr.{number,url,review_state}` (Claude Code native)
-  function stdinWithPr(pr) {
-    const data = {
-      cwd: REPO_CWD,
-      model: { display_name: 'Opus 4.6' },
-      context_window: { used_percentage: 30 },
-    };
-    if (pr) data.pr = pr;
-    return data;
-  }
+describe('PR fields are not displayed', () => {
+  // Claude Code still sends pr.{number,url,review_state}. The status line
+  // dropped the segment: the OSC8 link never worked in a real terminal
+  // (anthropics/claude-code#26356, closed NOT_PLANNED) and the number and
+  // review state were not worth the width.
+  const stdinWithPr = {
+    cwd: REPO_CWD,
+    model: { display_name: 'Opus 4.6' },
+    context_window: { used_percentage: 30 },
+    pr: {
+      number: 99,
+      url: 'https://github.com/test/repo/pull/99',
+      review_state: 'approved',
+    },
+  };
 
-  it('approved shows check icon', () => {
-    const result = run(stdinWithPr({ number: 99, url: 'https://github.com/test/repo/pull/99', review_state: 'approved' }));
-    assert.equal(result.exitCode, 0);
-    assert.ok(result.stdout.includes('\uF00C'), 'should include check icon for approved');
-    const plain = stripAnsi(result.stdout);
-    assert.ok(plain.includes('#99'), 'should include PR number');
-  });
-
-  it('changes_requested shows close icon', () => {
-    const result = run(stdinWithPr({ number: 100, url: 'https://github.com/test/repo/pull/100', review_state: 'changes_requested' }));
-    assert.equal(result.exitCode, 0);
-    assert.ok(result.stdout.includes('\uF00D'), 'should include close icon for changes_requested');
-  });
-
-  it('pending shows circle-o icon', () => {
-    const result = run(stdinWithPr({ number: 101, url: 'https://github.com/test/repo/pull/101', review_state: 'pending' }));
-    assert.equal(result.exitCode, 0);
-    assert.ok(result.stdout.includes('\uF10C'), 'should include circle-o icon for pending');
-  });
-
-  it('draft shows pencil icon', () => {
-    const result = run(stdinWithPr({ number: 104, url: 'https://github.com/test/repo/pull/104', review_state: 'draft' }));
-    assert.equal(result.exitCode, 0);
-    assert.ok(result.stdout.includes('\uF040'), 'should include pencil icon for draft');
-  });
-
-  it('PR without review_state shows no review icon', () => {
-    const result = run(stdinWithPr({ number: 102, url: 'https://github.com/test/repo/pull/102' }));
+  it('PR number, review icon and OSC8 link are all absent', () => {
+    const result = run(stdinWithPr);
     assert.equal(result.exitCode, 0);
     const plain = stripAnsi(result.stdout);
-    assert.ok(plain.includes('#102'), 'should still include PR number');
-    assert.ok(!result.stdout.includes('\uF00C'), 'should not include check icon');
-    assert.ok(!result.stdout.includes('\uF00D'), 'should not include close icon');
-    assert.ok(!result.stdout.includes('\uF10C'), 'should not include circle-o icon');
-    assert.ok(!result.stdout.includes('\uF040'), 'should not include pencil icon');
-  });
-
-  it('PR number without url renders plain (no broken OSC8 link)', () => {
-    const result = run(stdinWithPr({ number: 200 }));
-    assert.equal(result.exitCode, 0);
-    const plain = stripAnsi(result.stdout);
-    assert.ok(plain.includes('#200'), 'should still show PR number');
-    // osc8() with an empty url emits a hyperlink escape (ESC ] 8 ; ;).
-    // When pr.url is absent the number must render as plain text.
-    assert.ok(!result.stdout.includes('\x1b]8;;'), 'should not emit an OSC8 hyperlink without a url');
-  });
-
-  it('no pr field shows no PR number', () => {
-    const result = run(stdinWithPr(null));
-    assert.equal(result.exitCode, 0);
-    const plain = stripAnsi(result.stdout);
-    assert.ok(!plain.includes('#'), 'should not include any PR number');
+    assert.ok(!plain.includes('#99'), 'should not include the PR number');
+    assert.ok(!result.stdout.includes('\uF00C'), 'should not include the approved icon');
+    assert.ok(!result.stdout.includes('\x1b]8;;'), 'should not emit an OSC8 hyperlink');
   });
 });
 
@@ -534,5 +493,153 @@ describe('themes', () => {
     const result = runWithArgs(stdinData, [], { env: { ...process.env, STATUSLINE_THEME: 'dracula' } });
     assert.equal(result.exitCode, 0);
     assert.ok(result.stdout.includes('\x1b[38;5;141m'), 'should contain dracula 256-color purple for model');
+  });
+});
+
+describe('rate limits', () => {
+  function stdinWith(rateLimits) {
+    const data = {
+      cwd: '/tmp',
+      model: { display_name: 'Opus 4.6' },
+      context_window: { used_percentage: 30 },
+    };
+    if (rateLimits) data.rate_limits = rateLimits;
+    return data;
+  }
+
+  it('shows both windows, rounded', () => {
+    const result = run(stdinWith({
+      five_hour: { used_percentage: 32.4, resets_at: 1790000000 },
+      seven_day: { used_percentage: 67.5, resets_at: 1790500000 },
+    }));
+    assert.equal(result.exitCode, 0);
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('5h 32%'), 'should round the 5-hour window down');
+    assert.ok(plain.includes('7d 68%'), 'should round the 7-day window up');
+  });
+
+  it('shows only the window that arrives', () => {
+    const result = run(stdinWith({ seven_day: { used_percentage: 12 } }));
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('7d 12%'), 'should show the 7-day window');
+    assert.ok(!plain.includes('5h'), 'should not show a 5-hour window that was not sent');
+  });
+
+  it('omits the segment when rate_limits is absent', () => {
+    const result = run(stdinWith(null));
+    const plain = stripAnsi(result.stdout);
+    assert.ok(!plain.includes('5h'), 'should not show a 5-hour window');
+    assert.ok(!plain.includes('7d'), 'should not show a 7-day window');
+    assert.ok(!result.stdout.includes('\uF0E4'), 'should not show the meter icon');
+  });
+
+  it('omits a window whose used_percentage is missing', () => {
+    const result = run(stdinWith({ five_hour: { resets_at: 1790000000 } }));
+    const plain = stripAnsi(result.stdout);
+    assert.ok(!plain.includes('5h'), 'should not show a window without used_percentage');
+  });
+
+  it('replaces the clock: no HH:MM:SS anywhere', () => {
+    const result = run(stdinWith({ five_hour: { used_percentage: 10 } }));
+    const plain = stripAnsi(result.stdout);
+    assert.ok(!/\d\d:\d\d:\d\d/.test(plain), 'should not print a wall clock');
+  });
+});
+
+describe('prompt cache warmth', () => {
+  function stdinWith(promptCache) {
+    const data = {
+      cwd: '/tmp',
+      model: { display_name: 'Opus 4.6' },
+      context_window: { used_percentage: 30 },
+    };
+    if (promptCache) data.prompt_cache = promptCache;
+    return data;
+  }
+
+  it('warm cache shows the fire icon', () => {
+    const result = run(stdinWith({ warm: true, hit_ratio: 0.9 }));
+    assert.equal(result.exitCode, 0);
+    assert.ok(result.stdout.includes('\uF06D'), 'should show the fire icon');
+    assert.ok(!result.stdout.includes('\uF2DC'), 'should not show the snowflake icon');
+  });
+
+  it('cold cache shows the snowflake icon', () => {
+    const result = run(stdinWith({ warm: false }));
+    assert.ok(result.stdout.includes('\uF2DC'), 'should show the snowflake icon');
+    assert.ok(!result.stdout.includes('\uF06D'), 'should not show the fire icon');
+  });
+
+  it('omits the icon when prompt_cache is absent', () => {
+    const result = run(stdinWith(null));
+    assert.ok(!result.stdout.includes('\uF06D'), 'should not show the fire icon');
+    assert.ok(!result.stdout.includes('\uF2DC'), 'should not show the snowflake icon');
+  });
+
+  it('omits the icon when warm is not a boolean', () => {
+    // null is the shape that matters: a nullable field reads as "present" to
+    // a `!== undefined` check, and would then render as cold.
+    for (const warm of [null, 'true', 1]) {
+      const result = run(stdinWith({ warm, hit_ratio: 0.5 }));
+      assert.ok(!result.stdout.includes('\uF06D'), `should not show the fire icon for warm=${JSON.stringify(warm)}`);
+      assert.ok(!result.stdout.includes('\uF2DC'), `should not show the snowflake icon for warm=${JSON.stringify(warm)}`);
+    }
+  });
+});
+
+describe('worktree and session name', () => {
+  const base = {
+    cwd: '/tmp',
+    model: { display_name: 'Opus 4.6' },
+    context_window: { used_percentage: 30 },
+  };
+
+  function runWide(data) {
+    return runWithArgs(data, [], {
+      env: { ...process.env, COLUMNS: '200' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+  }
+
+  it('worktree.name replaces the path and swaps the folder icon', () => {
+    const result = runWide({
+      ...base,
+      cwd: '/home/u/.claude/worktrees/fix-login',
+      worktree: { name: 'fix-login', path: '/home/u/.claude/worktrees/fix-login' },
+    });
+    assert.equal(result.exitCode, 0);
+    const plain = stripAnsi(result.stdout);
+    assert.ok(plain.includes('fix-login'), 'should show the worktree name');
+    assert.ok(!plain.includes('.claude/worktrees'), 'should not show the worktree path');
+    assert.ok(result.stdout.includes('\uF1E0'), 'should show the worktree icon');
+    assert.ok(!result.stdout.includes('\uF07C'), 'should not show the folder icon');
+  });
+
+  it('path and folder icon stay when worktree is absent', () => {
+    const result = runWide(base);
+    assert.ok(result.stdout.includes('\uF07C'), 'should show the folder icon');
+    assert.ok(!result.stdout.includes('\uF1E0'), 'should not show the worktree icon');
+  });
+
+  it('session_name is appended to line 1', () => {
+    const result = runWide({ ...base, session_name: 'secrets-migration' });
+    const line1 = stripAnsi(result.stdout).split('\n')[0];
+    assert.ok(line1.includes('secrets-migration'), 'should show the session name on line 1');
+    assert.ok(result.stdout.includes('\uF0C5'), 'should show the session icon');
+  });
+
+  it('session_name is dropped when the terminal is too narrow', () => {
+    const result = runWithArgs({ ...base, session_name: 'secrets-migration' }, [], {
+      env: { ...process.env, COLUMNS: '40' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const plain = stripAnsi(result.stdout);
+    assert.ok(!plain.includes('secrets-migration'), 'should drop the name rather than overflow');
+    assert.ok(!result.stdout.includes('\uF0C5'), 'should not show the session icon');
+  });
+
+  it('no session icon when session_name is absent', () => {
+    const result = runWide(base);
+    assert.ok(!result.stdout.includes('\uF0C5'), 'should not show the session icon');
   });
 });

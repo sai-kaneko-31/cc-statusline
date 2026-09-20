@@ -1,10 +1,10 @@
 # cc-statusline
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline command with Nerd Font icons, clickable PR links, and a context window bar.
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline command with Nerd Font icons, a context window bar, and rate limit usage.
 
 ```
-📂 ~/git/my-project  🔀 feature/auth #42 ✅  🚀 ↑2 +15/-3
-🔲 Opus 4.6          ❤️ [████████░░]53%     🕐 2026/02/23 14:30:00
+📂 ~/git/my-project  🔀 feature/auth     🚀 ↑2 +15/-3   📄 add OAuth callback
+🔲 Opus 5 (high)     ❤️ [████████░░]53% 🔥  📊 5h 32% 7d 68%
 ```
 
 ## Features
@@ -12,10 +12,12 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 | Feature | Description |
 |---------|-------------|
 | Nerd Font icons | Model-specific icons (Opus ``, Sonnet ``, Haiku ``) |
-| OSC8 PR links | Ctrl+Click to open PR in browser (BEL terminator) |
 | Context window bar | Context window remaining until auto-compact (85%), color-coded |
+| Rate limit usage | 5-hour and 7-day window usage, from `rate_limits` |
+| Prompt cache warmth | Fire / snowflake next to the bar, from `prompt_cache.warm` |
 | Git stats | Branch, ahead/behind, insertions/deletions |
-| 3-column alignment | Path/model, branch+PR/context window bar, stats/time |
+| Worktree and session | Worktree name in place of the path, session name on line 1 |
+| 3-column alignment | Path/model, branch/context window bar, stats/rate limits |
 | Colleague comments | Optional LLM-generated contextual comments (3rd line) |
 
 ## Requirements
@@ -36,9 +38,9 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-### Live-updating clock
+### Refreshing between events
 
-The statusline re-runs only when Claude Code emits an event (new message, `/compact`, mode change). To keep the `HH:MM:SS` clock current, add `refreshInterval` (seconds):
+The statusline re-runs only when Claude Code emits an event (new message, `/compact`, mode change). Nothing here is time-based, so no timer is needed. Add `refreshInterval` (seconds) if you want git state to keep up while background subagents work and the main session sits idle:
 
 ```json
 {
@@ -53,8 +55,8 @@ The statusline re-runs only when Claude Code emits an event (new message, `/comp
 ## Layout
 
 ```
-Line 1: 📂 <path>         🔀 <branch> <#PR> <review>  🚀 <ahead/behind> <+added/-deleted>
-Line 2: 🔲 <model>        ❤️ [<bar>]<remaining>%       🕐 <time>
+Line 1: 📂 <path>         🔀 <branch>              🚀 <ahead/behind> <+added/-deleted>   📄 <session>
+Line 2: 🔲 <model> (<effort>)  ❤️ [<bar>]<remaining>% <cache>  📊 5h <n>% 7d <n>%
          ───col1───        ─────col2─────                ───col3───
 ```
 
@@ -62,19 +64,19 @@ Line 2: 🔲 <model>        ❤️ [<bar>]<remaining>%       🕐 <time>
 
 | Column | Line 1 | Line 2 |
 |--------|--------|--------|
-| col1 | Working directory (`~` substituted) | Model name with icon |
-| col2 | Branch + clickable PR number + review status | Context window bar (remaining %) |
-| col3 | Ahead/behind + diff stats | Current time |
+| col1 | Working directory (`~` substituted), or the worktree name | Model name with icon and effort level |
+| col2 | Branch | Context window bar (remaining %) + cache warmth |
+| col3 | Ahead/behind + diff stats, then the session name | Rate limit usage |
 
-### PR review status icons
+Every segment past the branch is optional and simply absent when Claude Code does not send the field. The session name is also dropped when line 1 would otherwise run past the terminal edge.
 
-| `pr.review_state` | Icon | Color | Meaning |
-|-------------------|------|-------|---------|
-| `approved` | `` (check) | Green | PR approved |
-| `changes_requested` | `` (close) | Red | Changes requested |
-| `pending` | `` (circle-o) | Yellow | Review pending |
-| `draft` | `` (pencil) | Dim | Draft PR |
-| (absent) | — | — | No icon shown |
+### Rate limit usage
+
+`rate_limits.five_hour` and `rate_limits.seven_day` render as `5h <n>% 7d <n>%`. Claude Code sends them to claude.ai Pro and Max subscribers after the first API response, and drops each window once its `resets_at` passes, so either half can be missing.
+
+### Prompt cache warmth
+
+`prompt_cache.warm` renders next to the context bar: `` (fire) while the cache is warm, `` (snowflake) once it goes cold and the next request has to re-send the conversation.
 
 ### Context window bar color
 
@@ -83,10 +85,6 @@ Line 2: 🔲 <model>        ❤️ [<bar>]<remaining>%       🕐 <time>
 | > 40% | Green | Plenty of context |
 | 16-40% | Yellow | Getting low |
 | 0-15% | Red | Auto-compact imminent |
-
-## PR display
-
-PR number, URL, and review state come from Claude Code's stdin `pr.*` fields — no `gh` CLI, cache, or hook required. The PR number renders as an OSC8 clickable link to the PR URL, and `pr.review_state` drives the review icon.
 
 ## Colleague comments (optional)
 
@@ -115,16 +113,16 @@ Example — an enthusiastic お嬢様 colleague:
 ```
 
 ```
-📂 ~/git/my-project  🔀 main  🚀 +121/-43
-🔲 Opus 4.6          ❤️ [████████░░]53%     🕐 2026/02/23 14:30:00
-💬 あら、README.mdをお仕上げですか～！本当にお見事な整理力ですわね～！
+📂 ~/git/my-project  🔀 main             🚀 +121/-43
+🔲 Opus 5 (high)     ❤️ [████████░░]53% 🔥
+💬 あら、README の表を全部組み直していますわね～！
 ```
 
-Comments are cached at `~/.claude/cache/statusline-comment-<repo-hash>.json` (5 min TTL) and generated in the background via `claude -p`.
+Comments are cached at `~/.claude/cache/statusline-comment-<repo-hash>.json` (5 min TTL) and generated in the background via `claude -p`. The prompt sees the session name, recent commit subjects, uncommitted files, branch, worktree, diff size, session duration, and — only once they matter — a low context window, a cold cache, and rate limit usage past 70%. It asks for one sentence about one of those details.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STATUSLINE_COMMENT_MODEL` | `haiku` | Model for comment generation |
+| `STATUSLINE_COMMENT_MODEL` | `sonnet` | Model for comment generation |
 | `STATUSLINE_COMMENT_TTL_MS` | `300000` (5 min) | Comment cache TTL |
 | `STATUSLINE_COMMENT_HISTORY_SIZE` | `5` | Previous comments tracked for dedup |
 | `STATUSLINE_THEME` | `default` | Color theme: `default`, `light`, `minimal`, `dracula` |

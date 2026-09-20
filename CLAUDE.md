@@ -23,8 +23,8 @@ echo '{"cwd":"/tmp","model":{"display_name":"Opus 4.6"},"context_window":{"used_
 # Test inside a git repo (shows branch info)
 echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_window\":{\"used_percentage\":70}}" | node index.js
 
-# Test PR display (pr.* is provided by Claude Code; pass it manually here)
-echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"pr\":{\"number\":42,\"url\":\"https://github.com/x/y/pull/42\",\"review_state\":\"approved\"}}" | node index.js
+# Test rate limits, prompt cache and session name (all optional in stdin)
+echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 5\"},\"effort\":{\"level\":\"high\"},\"session_name\":\"my task\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":32},\"seven_day\":{\"used_percentage\":68}},\"prompt_cache\":{\"warm\":true}}" | node index.js
 
 # Test with colleague comment (requires cached comment)
 echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_window\":{\"used_percentage\":70}}" | node index.js --colleague-instruction 'Be friendly'
@@ -54,36 +54,44 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 | `session_id` | string | No | Session ID (used in comment cache key for per-session uniqueness) |
 | `effort.level` | string | No | Reasoning effort level (`low`/`medium`/`high`/`xhigh`/`max`); absent if model doesn't support it. Reflects mid-session `/effort` changes |
 | `workspace.current_dir` | string | No | Fallback source for `cwd` when `cwd` is absent |
-| `pr.number` | number | No | Open PR number (Claude Code native; absent when no PR or PR merged/closed) |
-| `pr.url` | string | No | Open PR URL (used for OSC8 clickable link) |
-| `pr.review_state` | string | No | PR review state (`approved`/`pending`/`changes_requested`/`draft`); absent if no review |
+| `session_name` | string | No | Custom (`--name` / `/rename`) or AI-generated session title; shown at the end of line 1. Absent when the session has neither |
+| `worktree.name` | string | No | Worktree name; replaces the path in col1. Present only in a Claude Code worktree session, not for `git worktree add` |
+| `rate_limits.five_hour.used_percentage` | number | No | 5-hour window usage (0-100). claude.ai Pro/Max only, after the first API response; dropped once `resets_at` passes |
+| `rate_limits.seven_day.used_percentage` | number | No | 7-day window usage (0-100); same availability as `five_hour`, and independently absent |
+| `prompt_cache.warm` | boolean | No | Whether the prompt cache is within its TTL; drives the fire/snowflake icon. Absent until the first API response |
+
+`pr.*` is still sent by Claude Code but deliberately unused (see Key Implementation Details).
 
 ## Key Implementation Details
 
-- PR info (number, URL, review state) read directly from stdin `pr.*` — no `gh` call or cache file
+- `pr.*` is not displayed: the OSC8 link it justified never worked in a real terminal ([anthropics/claude-code#26356](https://github.com/anthropics/claude-code/issues/26356), closed NOT_PLANNED), and the number and review state were not worth the width. A test asserts the segment stays gone
 - Context window bar converts used_percentage to "remaining until 85% (auto-compact threshold)"
-- OSC8 hyperlinks use BEL (`\x07`) terminator
+- Rate limit usage replaces the clock in col3 of line 2; each window is independently optional, so `windowPct` returns null for anything non-numeric
+- Prompt cache warmth sits next to the context bar; `warm` must be a boolean, since a nullable field would otherwise render as cold
+- Worktree name replaces the path (with a different icon) because a Claude Code worktree session has an uninformative cwd under `.claude/worktrees/`
+- Session name closes line 1 and is dropped when it would push the line past the terminal edge; line 1 has the slack because column widths are sized for the wider line 2
 - All git commands have `timeout: 3000ms`
 - Comment cache at `~/.claude/cache/statusline-comment-<hash>.json` where hash = MD5(toplevel + session_id)[:8] (TTL: 5 min, override with `STATUSLINE_COMMENT_TTL_MS`)
 - Comment cache format: `{ comment: "text", history: ["prev1", "prev2", ...] }` — history keeps last N comments for dedup
-- Comment prompt: instruction first (persona adherence), dynamic context (empty fields omitted), changedFiles max 5
-- Comment prompt priority: changed files > branch > time > duration/cost; context window remaining only shown if <15%
-- Comment dedup uses positive instruction ("say something different") instead of negative ("DO NOT repeat")
+- Comment prompt: instruction first (persona adherence), dynamic context (empty fields omitted), changedFiles max 5, recentCommits max 3
+- Comment prompt context order leads with what the session is about (session name, recent commit subjects, uncommitted files) because the model reacts to the first concrete thing it sees; numbers follow
+- Comment prompt shows pressure signals only once they matter: context window <15%, cold cache, rate limit windows at 70%+
+- Comment prompt asks for ONE sentence within 30 Japanese / 60 English characters — the display truncates to one line, so asking for more just throws away the tail
+- Comment dedup lists what was already said and rules out repeating its angle, not just its wording
 - Comment output sanitized: newlines collapsed, capped to 200 codepoints at generation (safety net, surrogate-pair safe)
 - Comment display uses `truncStrVisual` (visual-cell width: CJK/emoji = 2 cells); separate from char-based `truncStr` for path/model/branch layout
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model> --no-session-persistence` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
-- Effort level: stdin `effort.level` preferred, `~/.claude/settings.json` `effortLevel` as fallback; shown next to model name with bolt icon
+- Effort level: stdin `effort.level` preferred, `~/.claude/settings.json` `effortLevel` as fallback; rendered inside the model segment as `Opus 5 (high)`
 - Terminal width detection: `process.stderr.columns` → `COLUMNS` env → default 100; columns dynamically capped to fit
-- Model display_name parenthetical suffix (e.g. "(1M context)") auto-stripped; time format is `HH:MM:SS`
-- PR review status: stdin `pr.review_state` mapped to icons (approved→, changes_requested→, pending→, draft→)
+- Model display_name parenthetical suffix (e.g. "(1M context)") auto-stripped
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STATUSLINE_COMMENT_MODEL` | `haiku` | Model alias for `claude -p --model` |
+| `STATUSLINE_COMMENT_MODEL` | `sonnet` | Model alias for `claude -p --model` |
 | `STATUSLINE_COMMENT_TTL_MS` | `300000` (5 min) | Colleague comment cache TTL |
 | `STATUSLINE_COMMENT_HISTORY_SIZE` | `5` | Number of previous comments to track for dedup |
 | `STATUSLINE_THEME` | `default` | Color theme: `default`, `light`, `minimal`, `dracula` |
@@ -96,16 +104,14 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 
 ## Gotchas
 
-- PR info comes from Claude Code's stdin `pr.*`; absent when no open PR exists (no error)
 - Invalid JSON on stdin causes silent exit (`process.exit(0)`, no output)
 - Statusline re-runs only on Claude Code triggers (new message, `/compact`, permission/vim mode change), debounced 300ms
-- The `HH:MM:SS` clock goes stale between triggers; users wanting a live clock set `statusLine.refreshInterval` (seconds) in settings.json
+- Nothing in the output is time-based, so `statusLine.refreshInterval` is optional; it is only worth setting to keep git state current while background subagents work
 - `statusLine.hideVimModeIndicator` (settings.json) hides Claude Code's own vim indicator; unrelated to this command's output
 - Icons require a [Nerd Font](https://www.nerdfonts.com/) in the terminal
-- OSC8 hyperlinks don't work in some terminal emulators (Claude Code limitation: [anthropics/claude-code#26356](https://github.com/anthropics/claude-code/issues/26356)). Works in IDE integrated terminals (VS Code, Cursor), but may render as plain text in standalone emulators (Konsole, Windows Terminal)
 - If `claude` CLI is not installed or not authenticated, colleague comments are silently skipped
 - The `--generate-comment` background process must unset `CLAUDECODE` and related env vars to avoid recursion
 - Tests use `process.execPath` (not `'node'`) for portability; `claude` CLI tests are skipped when not authenticated
 - GitHub repo rules require PRs to merge into main (direct push rejected); merge commits disabled, use `gh pr merge --squash`
 - Claude Code's statusline renderer truncates lines with too many ANSI escape sequences; keep transitions minimal (≤6 per line), avoid mid-bar color switching
-- Effort bolt icon uses ⚡ (U+26A1, full-width) not Nerd Font \uF0E7; width calculations must add +1 for the extra column
+- No full-width characters in the layout: effort moved into `(...)` precisely so every column width is plain `.length`. Adding an emoji back reintroduces the +1 correction that used to be needed for ⚡ (U+26A1)
