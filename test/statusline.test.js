@@ -740,15 +740,16 @@ describe('rendered lines fit the terminal', () => {
 });
 
 describe('model name outranks effort when the column is tight', () => {
-  const data = {
-    cwd: REPO_CWD,
-    model: { display_name: 'Opus 5' },
-    effort: { level: 'xhigh' },
-    context_window: { used_percentage: 55 },
-  };
-
-  function line2At(cols) {
-    const result = runWithArgs(data, [], {
+  // cwd is outside a git repo on purpose: inside one, col1 depends on the
+  // branch name and the checkout path, so the column width would differ
+  // between a working copy and CI's detached checkout.
+  function line2At(cols, model, effortLevel) {
+    const result = runWithArgs({
+      cwd: '/tmp',
+      model: { display_name: model },
+      effort: { level: effortLevel },
+      context_window: { used_percentage: 55 },
+    }, [], {
       env: { ...process.env, COLUMNS: String(cols) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -756,12 +757,16 @@ describe('model name outranks effort when the column is tight', () => {
   }
 
   it('keeps both when the column is wide enough', () => {
-    assert.ok(line2At(120).includes('Opus 5 (xhigh)'), line2At(120));
+    const line2 = line2At(120, 'Opus 5', 'xhigh');
+    assert.ok(line2.includes('Opus 5 (xhigh)'), line2);
   });
 
   it('drops the effort rather than truncating the model name', () => {
-    const line2 = line2At(60);
-    assert.ok(line2.includes('Opus 5'), `should keep the model name: ${line2}`);
-    assert.ok(!line2.includes('xhigh'), `should drop the effort: ${line2}`);
+    // col1 is 13 cells here ("Opus" + " (medium)"), which leaves 4 for the
+    // model name once the effort is placed — under the 5-cell floor.
+    const line2 = line2At(60, 'Opus', 'medium');
+    assert.ok(line2.includes('Opus'), `should keep the model name: ${line2}`);
+    assert.ok(!line2.includes('medium'), `should drop the effort: ${line2}`);
+    assert.ok(!line2.includes('…'), `should not truncate the model name: ${line2}`);
   });
 });
