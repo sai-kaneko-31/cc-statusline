@@ -283,11 +283,18 @@ function padEnd(str, width) {
 // The emoji blocks and the private use area are added on top by hand, so
 // regenerating from unicodedata alone drops them.
 //
-// Unicode calls the private use areas Ambiguous, so their width is the font's
-// to decide. Cica gives its icons a two-cell advance and this table follows
-// that; a font that advances one cell needs the ranges removed. All three
-// planes are listed: Nerd Fonts v3 moved Material Design Icons to plane 15
-// (U+F0001 and up), and Cica v5.0.3 carries 2283 glyphs there.
+// Unicode calls the private use areas Ambiguous, which leaves the width to the
+// terminal's own table — that table is what advances the cursor, not the font's
+// metrics. This list has to agree with it. Two cells is the target: WezTerm
+// reaches it with `cell_widths`, Ghostty 1.2.0 and later does it for Nerd Font
+// glyphs on its own, and Cica draws its icons that wide so the glyph fills the
+// space instead of spilling out of it. Against a terminal that advances one
+// cell, drop these ranges. All three planes are listed because the terminal
+// setting covers whole planes and planes 15 and 16 are private use end to end,
+// so widening them catches nothing standard. Nerd Fonts v3 moved Material
+// Design Icons into plane 15 (U+F0001 and up), where Cica v5.0.3 has 2283
+// glyphs; plane 16 holds none today and is listed to keep the two tables
+// aligned.
 const WIDE_RANGES = [
   [0x1100, 0x115F],
   [0x231A, 0x231B],
@@ -467,9 +474,10 @@ const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
 // An icon plus its trailing space, and the same preceded by a column gap.
 // Read through visualWidth rather than written as a number, so these stay
 // tied to WIDE_RANGES. That table fixes the icon at two cells; nothing here
-// asks the font, so a font that advances one cell needs the table changed.
+// looks at the terminal, so a terminal that advances one cell needs the table
+// changed.
 const ICON_SEG = visualWidth(ICON_FOLDER) + 1;
-const GAP_ICON_SEG = COL_SEP.length + ICON_SEG;
+const GAP_ICON_SEG = visualWidth(COL_SEP) + ICON_SEG;
 
 const line1Outside =
   ICON_SEG +                            // dir icon + space
@@ -487,10 +495,13 @@ const COLS_FLOOR = 30;
 // Rate limits go first: the context bar is what the status line is for.
 let showCache = cacheWarm !== null;
 let showRate = rateText !== '';
+// The icon the sizing measures has to be the icon the line draws, so both read
+// this one binding.
+const cacheIcon = cacheWarm ? ICON_CACHE_WARM : ICON_CACHE_COLD;
 const line2Outside = () =>
   ICON_SEG +                            // model icon + space
   GAP_ICON_SEG +                        // COL_SEP + heart icon + space
-  (showCache ? 1 + visualWidth(ICON_CACHE_WARM) : 0) + // space + cache icon
+  (showCache ? 1 + visualWidth(cacheIcon) : 0) +       // space + cache icon
   (showRate ? GAP_ICON_SEG + visualWidth(rateText) : 0); // COL_SEP + meter icon + space
 // Only line 2's own width decides what line 2 gives up. Line 1's tail can be
 // the longer of the two, and dropping segments off line 2 does nothing for it.
@@ -599,7 +610,6 @@ if (usedPct != null && usedPct !== '') {
 // request has to re-send.
 if (showCache) {
   const cacheColor = cacheWarm ? T.barSafe : T.dim;
-  const cacheIcon = cacheWarm ? ICON_CACHE_WARM : ICON_CACHE_COLD;
   line2 += ` ${cacheColor}${cacheIcon}${RESET}`;
 }
 

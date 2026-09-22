@@ -647,9 +647,12 @@ describe('worktree and session name', () => {
   });
 });
 
-// Narrowest terminal the layout fits in. Below this the column floors plus
-// the widest line 1 tail (a 32-char branch, ↑12↓34, +1234/-5678) reserve more
-// cells than the terminal has. Measured at 61 with two-cell Nerd Font icons.
+// Narrowest terminal the layout fits in, for the tail these fixtures use:
+// line1Outside is 31 cells (three two-cell icons with their gaps, ↑12↓34 and
+// +1234/-5678) and COLS_FLOOR is 30, so below 61 the two reserve more cells
+// than the terminal has. A tail with more digits raises it — ↑123↓456 with
+// +12345/-67890 needs 65. The 33-char branch only pushes the columns down onto
+// their floor; it does not move this number.
 const MIN_SUPPORTED_COLS = 61;
 
 // Visual cell width. WIDE_RANGES is copied from index.js and must stay

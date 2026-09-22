@@ -49,4 +49,21 @@ describe('icon width', () => {
     assert.ok(covered,
       `U+${icon.toString(16).toUpperCase()} (ICON_FOLDER) must be in WIDE_RANGES`);
   });
+
+  it('every icon the layout draws is the same two cells', () => {
+    // ICON_SEG measures ICON_FOLDER but stands in for every icon, and the cache
+    // slot measures whichever of the two cache icons the line draws. Both hold
+    // only while the whole set is in WIDE_RANGES, so check the set rather than
+    // the one icon the arithmetic happens to read.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
+    const icons = [...src.matchAll(/const (ICON_[A-Z_]+) = '\\u([0-9A-Fa-f]+)'/g)]
+      .map(([, name, hex]) => [name, parseInt(hex, 16)]);
+    assert.ok(icons.length >= 13, `expected the icon constants, got ${icons.length}`);
+    const ranges = rangesOf('../index.js').map((r) => r.split('-').map(Number));
+    const outside = icons
+      .filter(([, cp]) => !ranges.some(([lo, hi]) => cp >= lo && cp <= hi))
+      .map(([name, cp]) => `${name} (U+${cp.toString(16).toUpperCase()})`);
+    assert.deepEqual(outside, [],
+      `these icons would be measured as one cell: ${outside.join(', ')}`);
+  });
 });
