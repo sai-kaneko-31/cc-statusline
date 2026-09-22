@@ -277,10 +277,15 @@ function padEnd(str, width) {
 }
 
 // Code point ranges that occupy two terminal cells: East Asian Wide and
-// Fullwidth from the Unicode table, plus the emoji blocks. Generated from
-// unicodedata, not hand-listed — picking ranges by hand left ⭐ ⏰ ⬛ and the
-// CJK extension planes counting as one cell, which broke the width contract
-// by tens of cells on a single line.
+// Fullwidth from the Unicode table, the emoji blocks, and the private use
+// area where Nerd Font keeps its icons. Generated from unicodedata, not
+// hand-listed — picking ranges by hand left ⭐ ⏰ ⬛ and the CJK extension
+// planes counting as one cell, which broke the width contract by tens of
+// cells on a single line.
+//
+// The private use area is the font's call, not Unicode's. Cica gives its
+// icons a two-cell advance; some other patched fonts advance one cell and
+// let the glyph spill into the next one. This assumes the former.
 const WIDE_RANGES = [
   [0x1100, 0x115F],
   [0x231A, 0x231B],
@@ -310,7 +315,7 @@ const WIDE_RANGES = [
   [0xA490, 0xA4C6],
   [0xA960, 0xA97C],
   [0xAC00, 0xD7A3],
-  [0xF900, 0xFAFF],
+  [0xE000, 0xFAFF],
   [0xFE10, 0xFE19],
   [0xFE30, 0xFE52],
   [0xFE54, 0xFE66],
@@ -455,10 +460,16 @@ const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
 // What each line spends outside the two columns. Both tails vary with their
 // content — ahead/behind and diff stats on line 1, rate limits on line 2 —
 // so the columns are sized against whichever line needs more room.
+// An icon plus its trailing space, and the same preceded by a column gap.
+// Icon width comes from visualWidth rather than a constant: the font decides
+// how many cells its private-use glyphs take.
+const ICON_SEG = visualWidth(ICON_FOLDER) + 1;
+const GAP_ICON_SEG = COL_SEP.length + ICON_SEG;
+
 const line1Outside =
-  2 +                                   // dir icon + space
-  (gitBranch ? 4 : 0) +                 // COL_SEP + branch icon + space
-  4 +                                   // COL_SEP + rocket icon + space
+  ICON_SEG +                            // dir icon + space
+  (gitBranch ? GAP_ICON_SEG : 0) +      // COL_SEP + branch icon + space
+  GAP_ICON_SEG +                        // COL_SEP + rocket icon + space
   visualWidth(gitAheadBehind || '-') +
   visualWidth(statsText);
 
@@ -472,10 +483,10 @@ const COLS_FLOOR = 30;
 let showCache = cacheWarm !== null;
 let showRate = rateText !== '';
 const line2Outside = () =>
-  2 +                                   // model icon + space
-  4 +                                   // COL_SEP + heart icon + space
-  (showCache ? 2 : 0) +                 // space + cache icon
-  (showRate ? 4 + visualWidth(rateText) : 0); // COL_SEP + meter icon + space
+  ICON_SEG +                            // model icon + space
+  GAP_ICON_SEG +                        // COL_SEP + heart icon + space
+  (showCache ? 1 + visualWidth(ICON_CACHE_WARM) : 0) + // space + cache icon
+  (showRate ? GAP_ICON_SEG + visualWidth(rateText) : 0); // COL_SEP + meter icon + space
 // Only line 2's own width decides what line 2 gives up. Line 1's tail can be
 // the longer of the two, and dropping segments off line 2 does nothing for it.
 if (showRate && termCols - line2Outside() < COLS_FLOOR) showRate = false;
@@ -537,7 +548,7 @@ line1 += statsDisplay;
 if (sessionName) {
   const line1Len =
     line1Outside + col1Len + (gitBranch ? col2Len : 0);
-  const sessionRoom = termCols - line1Len - 4; // COL_SEP(2) + icon(1) + space(1)
+  const sessionRoom = termCols - line1Len - GAP_ICON_SEG;
   if (sessionRoom >= 4) {
     const label = truncStrVisual(sessionName, sessionRoom);
     line1 += `${COL_SEP}${T.dim}${ICON_SESSION} ${label}${RESET}`;
@@ -649,7 +660,7 @@ if (colleagueInstruction !== null) {
 
 let output = `${line1}\n${line2}`;
 if (cachedComment) {
-  const commentMaxLen = Math.max(20, termCols - 4);
+  const commentMaxLen = Math.max(20, termCols - ICON_SEG);
   output += `\n${T.dim}${ICON_COMMENT} ${truncStrVisual(cachedComment, commentMaxLen)}${RESET}`;
 }
 process.stdout.write(output);

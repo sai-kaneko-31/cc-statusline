@@ -366,15 +366,20 @@ describe('colleague comments', () => {
     return { commentLine, body };
   }
 
+  // The comment line is "<icon><space><body>", and the icon takes two cells
+  // in a Nerd Font that advances two (see WIDE_RANGES). COLUMNS is 40 in
+  // renderCachedComment below.
+  const COMMENT_BUDGET = 40 - 3;
+
   it('long Japanese comment is truncated at visual-cell budget with ellipsis', () => {
     cleanCommentCache();
     try {
-      // 60 hiragana chars = ~120 visual cells; with COLUMNS=40 (budget=36),
+      // 60 hiragana chars = ~120 visual cells; with COLUMNS=40 (see COMMENT_BUDGET),
       // the comment must be cut and end with …
       const longComment = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんあいうえおかきくけこ';
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= 36, `truncated body visual width ${vw(body)} should fit COLUMNS-4=36`);
+      assert.ok(vw(body) <= COMMENT_BUDGET, `truncated body visual width ${vw(body)} should fit the budget ${COMMENT_BUDGET}`);
     } finally {
       cleanCommentCache();
     }
@@ -383,7 +388,7 @@ describe('colleague comments', () => {
   it('long ASCII comment is truncated with ellipsis (legacy code-unit semantics preserved)', () => {
     cleanCommentCache();
     try {
-      // 80 ASCII chars = 80 visual cells; with COLUMNS=40 (budget=36),
+      // 80 ASCII chars = 80 visual cells; with COLUMNS=40 (see COMMENT_BUDGET),
       // the legacy behavior was: result length === budget (35 chars + …).
       // visualWidth(ASCII)==length, so the new semantics must produce the
       // identical output for ASCII-only input.
@@ -391,10 +396,10 @@ describe('colleague comments', () => {
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
       // ASCII => visual width === string length; truncated to exactly budget.
-      assert.equal(body.length, 36, `ASCII truncation length should equal budget: got ${body.length}`);
-      assert.equal(vw(body), 36, `ASCII visual width should equal budget`);
+      assert.equal(body.length, COMMENT_BUDGET, `ASCII truncation length should equal budget: got ${body.length}`);
+      assert.equal(vw(body), COMMENT_BUDGET, `ASCII visual width should equal budget`);
       // The kept prefix must be the original characters (no width-rounding loss).
-      assert.equal(body.slice(0, 35), 'a'.repeat(35));
+      assert.equal(body.slice(0, COMMENT_BUDGET - 1), 'a'.repeat(COMMENT_BUDGET - 1));
     } finally {
       cleanCommentCache();
     }
@@ -404,11 +409,11 @@ describe('colleague comments', () => {
     cleanCommentCache();
     try {
       // 「漢」 = U+6F22 (CJK Unified Ideographs, range 0x4E00-0x9FFF, width 2).
-      // 40 kanji = 80 cells; budget 36 => must be cut.
+      // 40 kanji = 80 cells; the budget => must be cut.
       const longComment = '漢'.repeat(40);
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= 36, `CJK truncated body width ${vw(body)} should fit budget=36`);
+      assert.ok(vw(body) <= COMMENT_BUDGET, `CJK truncated body width ${vw(body)} should fit budget=${COMMENT_BUDGET}`);
     } finally {
       cleanCommentCache();
     }
@@ -418,11 +423,11 @@ describe('colleague comments', () => {
     cleanCommentCache();
     try {
       // 🎉 = U+1F389 (Emoji pictograph, range 0x1F300-0x1F9FF, width 2).
-      // 30 emoji = 60 cells; budget 36 => must be cut.
+      // 30 emoji = 60 cells; the budget => must be cut.
       const longComment = '🎉'.repeat(30);
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= 36, `emoji truncated body width ${vw(body)} should fit budget=36`);
+      assert.ok(vw(body) <= COMMENT_BUDGET, `emoji truncated body width ${vw(body)} should fit budget=${COMMENT_BUDGET}`);
     } finally {
       cleanCommentCache();
     }
@@ -431,7 +436,7 @@ describe('colleague comments', () => {
   it('comment fitting within budget is passed through unchanged (no ellipsis)', () => {
     cleanCommentCache();
     try {
-      // 10 hiragana = 20 cells, fits comfortably in budget=36.
+      // 10 hiragana = 20 cells, fits comfortably in the budget.
       const shortComment = 'おつかれさまです！';
       const { body } = renderCachedComment(shortComment);
       assert.ok(!body.endsWith('…'), `should not append ellipsis when within budget: ${JSON.stringify(body)}`);
@@ -656,6 +661,11 @@ describe('worktree and session name', () => {
   });
 });
 
+// Narrowest terminal the layout fits in. Below this the column floors plus
+// the widest line 1 tail (a 32-char branch, ↑12↓34, +1234/-5678) reserve more
+// cells than the terminal has. Measured at 61 with two-cell Nerd Font icons.
+const MIN_SUPPORTED_COLS = 61;
+
 // Visual cell width. WIDE_RANGES is copied from index.js and must stay
 // identical: this is the only check on the width contract, so a different
 // width model here would measure something the command never used.
@@ -689,7 +699,7 @@ const WIDE_RANGES = [
   [0xA490, 0xA4C6],
   [0xA960, 0xA97C],
   [0xAC00, 0xD7A3],
-  [0xF900, 0xFAFF],
+  [0xE000, 0xFAFF],
   [0xFE10, 0xFE19],
   [0xFE30, 0xFE52],
   [0xFE54, 0xFE66],
@@ -740,10 +750,6 @@ function visualWidth(str) {
 }
 
 describe('rendered lines fit the terminal', () => {
-  // Below this the layout reserves more than the terminal has: maxContentCols
-  // has a floor of 30, and the columns have floors of their own.
-  const MIN_SUPPORTED_COLS = 60;
-
   // Every cwd here is outside a git repo. Pointing one at this checkout would
   // make the column widths depend on the path and the branch name, which
   // differ between a working copy and CI's detached checkout.
@@ -885,7 +891,7 @@ describe('a repo whose trailing segments are at their longest', () => {
     if (repo) fs.rmSync(repo, { recursive: true, force: true });
   });
 
-  for (const cols of [60, 80, 100, 120]) {
+  for (const cols of [MIN_SUPPORTED_COLS, 80, 100, 120]) {
     it(`fits COLUMNS=${cols}`, () => {
       const result = runWithArgs({
         cwd: repo,
@@ -1164,7 +1170,7 @@ describe('line 2 gives up its tail only for its own width', () => {
       effort: { level: 'xhigh' },
       context_window: { used_percentage: 30 },
     }, [], {
-      env: { ...process.env, COLUMNS: '60' },
+      env: { ...process.env, COLUMNS: String(MIN_SUPPORTED_COLS) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const line2 = stripAnsi(result.stdout).split('\n')[1];
@@ -1184,13 +1190,14 @@ describe('line 2 gives up its tail only for its own width', () => {
       },
       prompt_cache: { warm: true },
     }, [], {
-      env: { ...process.env, COLUMNS: '57' },
+      env: { ...process.env, COLUMNS: String(MIN_SUPPORTED_COLS) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const line2 = stripAnsi(result.stdout).split('\n')[1];
     assert.ok(line2.includes('5h 10% 7d 20%'),
       `line 1's length must not strip line 2's tail: ${line2}`);
-    assert.ok(visualWidth(line2) <= 57, `line 2 is ${visualWidth(line2)} cells: ${line2}`);
+    assert.ok(visualWidth(line2) <= MIN_SUPPORTED_COLS,
+      `line 2 is ${visualWidth(line2)} cells: ${line2}`);
   });
 });
 
@@ -1202,7 +1209,7 @@ describe('wide characters outside the CJK blocks', () => {
     ['clocks and blocks', '⏰⌚⬛⬜⭕'.repeat(8)],
     ['CJK extension B', '𠀋𠮷'.repeat(10)],
   ]) {
-    for (const cols of [60, 80, 120]) {
+    for (const cols of [MIN_SUPPORTED_COLS, 80, 120]) {
       it(`${label} fit COLUMNS=${cols}`, () => {
         const result = runWithArgs({
           cwd: '/tmp',

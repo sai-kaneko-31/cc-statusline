@@ -79,7 +79,8 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - Comment prompt asks for ONE sentence within 30 Japanese / 60 English characters — the display truncates to one line, so asking for more just throws away the tail
 - Comment dedup lists what was already said and rules out repeating its angle, not just its wording
 - Comment output sanitized: newlines collapsed, capped to 200 codepoints at generation (safety net, surrogate-pair safe)
-- `WIDE_RANGES` is generated from the Unicode East Asian Width table plus the emoji blocks, not hand-listed; `test/width-ranges.test.js` fails if the copy in the test file drifts from it
+- `WIDE_RANGES` is generated from the Unicode East Asian Width table plus the emoji blocks and the private use area, not hand-listed; `test/width-ranges.test.js` fails if the copy in the test file drifts from it
+- Nerd Font icons live in the private use area, where the width is the font's call rather than Unicode's. Cica advances two cells; Bizin Gothic NF advances one and lets the glyph spill into the next cell, which is what made the columns look cramped. The layout assumes two, and reads it from `visualWidth(ICON_FOLDER)` rather than a constant
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model> --no-session-persistence` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
 - Requires `claude` CLI installed and authenticated; silently skips if unavailable
@@ -87,7 +88,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - Terminal width detection: `process.stderr.columns` → `COLUMNS` env → default 100
 - Width arithmetic is in terminal cells throughout (`visualWidth`): column widths, truncation (`truncStrVisual`) and padding (`padEnd`). Mixing in `.length` puts a wide-char segment past its column and the line past the terminal edge
 - Column widths are sized against whichever line spends more outside them. Both tails vary (ahead/behind + diff stats on line 1, rate limits on line 2), so a constant cannot stand in for that
-- On a terminal too narrow for the columns' floor plus the tail, line 2 drops rate limits and then the cache icon. Line 1's tail is not optional, so a long branch with large diff stats still overflows below roughly 60 columns
+- On a terminal too narrow for the columns' floor plus the tail, line 2 drops rate limits and then the cache icon. Line 1's tail is not optional, so a long branch with large diff stats still overflows below 61 columns (`MIN_SUPPORTED_COLS` in the tests)
 - Free text from the repository (commit subjects, file names, branch and worktree names) is flattened, stripped of quotes and backslashes, and capped before it enters the `claude -p` prompt; the prompt also states that the context is data
 - Model display_name parenthetical suffix (e.g. "(1M context)") auto-stripped
 
