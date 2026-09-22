@@ -283,9 +283,11 @@ function padEnd(str, width) {
 // The emoji blocks and the private use area are added on top by hand, so
 // regenerating from unicodedata alone drops them.
 //
-// Unicode calls the private use area Ambiguous, so its width is the font's
+// Unicode calls the private use areas Ambiguous, so their width is the font's
 // to decide. Cica gives its icons a two-cell advance and this table follows
-// that; a font that advances one cell needs the range removed.
+// that; a font that advances one cell needs the ranges removed. All three
+// planes are listed: Nerd Fonts v3 moved Material Design Icons to plane 15
+// (U+F0001 and up), and Cica v5.0.3 carries 2283 glyphs there.
 const WIDE_RANGES = [
   [0x1100, 0x115F],
   [0x231A, 0x231B],
@@ -349,6 +351,8 @@ const WIDE_RANGES = [
   [0x1FA70, 0x1FAFF],
   [0x20000, 0x2FFFD],
   [0x30000, 0x3FFFD],
+  [0xF0000, 0xFFFFD],
+  [0x100000, 0x10FFFD],
 ];
 
 // Visual display width: a wide code point counts as 2 cells, the rest as 1.

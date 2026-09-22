@@ -34,16 +34,19 @@ describe('visual width ranges', () => {
 
 describe('icon width', () => {
   it('index.js counts a Nerd Font icon as two cells', () => {
-    // The private use area is added to WIDE_RANGES by hand. Regenerating the
-    // table from unicodedata alone drops it, and the layout then reserves one
+    // The private use areas are added to WIDE_RANGES by hand. Regenerating the
+    // table from unicodedata alone drops them, and the layout then reserves one
     // cell per icon while the terminal draws two. Without this the only test
     // that notices is an unrelated assertion about the comment budget.
     const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
-    const ranges = [...src.matchAll(/\[(0x[0-9A-Fa-f]+), (0x[0-9A-Fa-f]+)\]/g)]
-      .map(([, lo, hi]) => [parseInt(lo, 16), parseInt(hi, 16)]);
-    // U+F07C folder-open, the icon ICON_SEG is measured from
-    const icon = 0xF07C;
+    // ICON_FOLDER is what ICON_SEG measures, so read it rather than repeating
+    // the code point here.
+    const iconMatch = src.match(/const ICON_FOLDER = '\\u([0-9A-Fa-f]+)'/);
+    assert.ok(iconMatch, 'ICON_FOLDER not found in index.js');
+    const icon = parseInt(iconMatch[1], 16);
+    const ranges = rangesOf('../index.js').map((r) => r.split('-').map(Number));
     const covered = ranges.some(([lo, hi]) => icon >= lo && icon <= hi);
-    assert.ok(covered, `U+${icon.toString(16).toUpperCase()} must be in WIDE_RANGES`);
+    assert.ok(covered,
+      `U+${icon.toString(16).toUpperCase()} (ICON_FOLDER) must be in WIDE_RANGES`);
   });
 });

@@ -358,9 +358,12 @@ describe('colleague comments', () => {
       const longComment = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんあいうえおかきくけこ';
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      // Equality, not <=. A looser width model here would still satisfy <= and
-      // let the comment line overflow unnoticed.
-      assert.equal(vw(body), COMMENT_BUDGET, `truncated body visual width ${vw(body)} should use the whole budget`);
+      // Within one cell of the budget, not just under it. A looser width model
+      // would still satisfy <= and let the comment line overflow unnoticed.
+      // The slack is one cell because a two-cell character cannot fill an odd
+      // remainder once the ellipsis has taken its cell.
+      assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
+        `truncated body visual width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
     } finally {
       cleanCommentCache();
     }
@@ -394,7 +397,8 @@ describe('colleague comments', () => {
       const longComment = '漢'.repeat(40);
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.equal(vw(body), COMMENT_BUDGET, `CJK truncated body width ${vw(body)} should use the whole budget`);
+      assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
+        `CJK truncated body width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
     } finally {
       cleanCommentCache();
     }
@@ -408,7 +412,8 @@ describe('colleague comments', () => {
       const longComment = '🎉'.repeat(30);
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.equal(vw(body), COMMENT_BUDGET, `emoji truncated body width ${vw(body)} should use the whole budget`);
+      assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
+        `emoji truncated body width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
     } finally {
       cleanCommentCache();
     }
@@ -714,6 +719,8 @@ const WIDE_RANGES = [
   [0x1FA70, 0x1FAFF],
   [0x20000, 0x2FFFD],
   [0x30000, 0x3FFFD],
+  [0xF0000, 0xFFFFD],
+  [0x100000, 0x10FFFD],
 ];
 
 function visualWidth(str) {
@@ -804,7 +811,9 @@ describe('rendered lines fit the terminal', () => {
   ];
 
   for (const [label, data] of inputs) {
-    for (const cols of [MIN_SUPPORTED_COLS, 80, 100, 120]) {
+    // These inputs keep line 1's tail short, so they fit well below the
+    // repo-wide minimum. A narrow width here exercises the column floors.
+    for (const cols of [55, 80, 100, 120]) {
       it(`${label} fits COLUMNS=${cols}`, () => {
         const result = runWithArgs(data, [], {
           env: { ...process.env, COLUMNS: String(cols) },
@@ -1161,12 +1170,12 @@ describe('line 2 gives up its tail only for its own width', () => {
   });
 
   it('keeps rate limits when line 2 has the room, however long line 1 is', () => {
-    // 60, not MIN_SUPPORTED_COLS. At 61 this repo's line 1 spends 31 cells
-    // outside the columns, so 61 - 31 lands exactly on COLS_FLOOR and the
-    // bug this guards against — folding line 1's width into line 2's drop
-    // decision — leaves the tail in place anyway. Line 1 overflows by a cell
-    // at this width, which is what the line-fitting tests use the real
-    // minimum for.
+    // The guard only bites at a width where line 1 asks for more than line 2:
+    // that is what makes folding line 1's width into line 2's drop decision
+    // change the outcome. Line 1 overflowing while line 2 fits is the
+    // observable form of that, and it is asserted below — without it, a
+    // one-cell change to COLS_FLOOR or to this fixture's branch name would
+    // leave the test green while covering nothing.
     const cols = 60;
     const result = runWithArgs({
       cwd: repo,
@@ -1181,15 +1190,20 @@ describe('line 2 gives up its tail only for its own width', () => {
       env: { ...process.env, COLUMNS: String(cols) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const line2 = stripAnsi(result.stdout).split('\n')[1];
+    const [line1, line2] = stripAnsi(result.stdout).split('\n');
+    // The precondition: at this width line 1 wants more than the terminal has
+    // and line 2 does not. If this stops holding, the assertions below pass
+    // for both the fixed and the broken code and guard nothing.
+    assert.ok(visualWidth(line1) > cols,
+      `line 1 must be the one that overflows at ${cols} cells, or this guards nothing: ${line1}`);
+    assert.ok(visualWidth(line2) <= cols,
+      `line 2 is ${visualWidth(line2)} cells: ${line2}`);
     assert.ok(line2.includes('5h 10% 7d 20%'),
       `line 1's length must not strip line 2's tail: ${line2}`);
     // The cache icon is dropped by the same rule one step later, so it has to
     // be checked here too; the rate limits alone leave that step uncovered.
     assert.ok(result.stdout.includes('\uF06D'),
       `line 1's length must not strip the cache icon: ${line2}`);
-    assert.ok(visualWidth(line2) <= cols,
-      `line 2 is ${visualWidth(line2)} cells: ${line2}`);
   });
 });
 
@@ -1201,7 +1215,9 @@ describe('wide characters outside the CJK blocks', () => {
     ['clocks and blocks', '⏰⌚⬛⬜⭕'.repeat(8)],
     ['CJK extension B', '𠀋𠮷'.repeat(10)],
   ]) {
-    for (const cols of [MIN_SUPPORTED_COLS, 80, 120]) {
+    // Wide characters only lengthen the session name, which is dropped when
+    // it does not fit, so these also work below the repo-wide minimum.
+    for (const cols of [55, 80, 120]) {
       it(`${label} fit COLUMNS=${cols}`, () => {
         const result = runWithArgs({
           cwd: '/tmp',
