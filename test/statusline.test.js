@@ -322,32 +322,11 @@ describe('colleague comments', () => {
     }
   });
 
-  // Visual-cell width helper mirroring index.js#visualWidth so tests can assert
-  // the post-truncation body stays within terminal columns regardless of the
-  // mix of ASCII / kana / kanji / emoji / dingbats in the input.
-  function vw(s) {
-    let w = 0;
-    for (const ch of s) {
-      const c = ch.codePointAt(0);
-      const wide =
-        (c >= 0x1100 && c <= 0x115F) ||
-        (c >= 0x2600 && c <= 0x27BF) ||
-        (c >= 0x2E80 && c <= 0x303F) ||
-        (c >= 0x3041 && c <= 0x33FF) ||
-        (c >= 0x3400 && c <= 0x4DBF) ||
-        (c >= 0x4E00 && c <= 0x9FFF) ||
-        (c >= 0xA000 && c <= 0xA4CF) ||
-        (c >= 0xAC00 && c <= 0xD7A3) ||
-        (c >= 0xF900 && c <= 0xFAFF) ||
-        (c >= 0xFE30 && c <= 0xFE4F) ||
-        (c >= 0xFF00 && c <= 0xFF60) ||
-        (c >= 0xFFE0 && c <= 0xFFE6) ||
-        (c >= 0x1F300 && c <= 0x1F9FF) ||
-        (c >= 0x1FA70 && c <= 0x1FAFF);
-      w += wide ? 2 : 1;
-    }
-    return w;
-  }
+  // Same width model as the layout. A second copy of the ranges here drifted:
+  // it counted Nerd Font icons as one cell after the layout moved to two, and
+  // width-ranges.test.js only compares index.js with the WIDE_RANGES table at
+  // the top of this file.
+  const vw = visualWidth;
 
   // Render a cached comment under COLUMNS=40 and return the comment-line body
   // (after the icon + space prefix) along with the full stripped line.
@@ -361,14 +340,14 @@ describe('colleague comments', () => {
     const lines = result.stdout.split('\n');
     assert.equal(lines.length, 3, 'should still emit a comment line');
     const commentLine = stripAnsi(lines[2]);
-    // Strip leading icon (private-use Nerd Font glyph, 1 cell) and the space.
+    // Strip the leading icon (one code point) and the space after it.
     const body = commentLine.replace(/^[^\s]\s/, '');
     return { commentLine, body };
   }
 
-  // The comment line is "<icon><space><body>", and the icon takes two cells
-  // in a Nerd Font that advances two (see WIDE_RANGES). COLUMNS is 40 in
-  // renderCachedComment below.
+  // The comment line is "<icon><space><body>". The icon takes two cells
+  // (see WIDE_RANGES) and the space one, against the COLUMNS=40 that
+  // renderCachedComment above passes in.
   const COMMENT_BUDGET = 40 - 3;
 
   it('long Japanese comment is truncated at visual-cell budget with ellipsis', () => {
@@ -379,7 +358,9 @@ describe('colleague comments', () => {
       const longComment = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんあいうえおかきくけこ';
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= COMMENT_BUDGET, `truncated body visual width ${vw(body)} should fit the budget ${COMMENT_BUDGET}`);
+      // Equality, not <=. A looser width model here would still satisfy <= and
+      // let the comment line overflow unnoticed.
+      assert.equal(vw(body), COMMENT_BUDGET, `truncated body visual width ${vw(body)} should use the whole budget`);
     } finally {
       cleanCommentCache();
     }
@@ -413,7 +394,7 @@ describe('colleague comments', () => {
       const longComment = '漢'.repeat(40);
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= COMMENT_BUDGET, `CJK truncated body width ${vw(body)} should fit budget=${COMMENT_BUDGET}`);
+      assert.equal(vw(body), COMMENT_BUDGET, `CJK truncated body width ${vw(body)} should use the whole budget`);
     } finally {
       cleanCommentCache();
     }
@@ -427,7 +408,7 @@ describe('colleague comments', () => {
       const longComment = '🎉'.repeat(30);
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= COMMENT_BUDGET, `emoji truncated body width ${vw(body)} should fit budget=${COMMENT_BUDGET}`);
+      assert.equal(vw(body), COMMENT_BUDGET, `emoji truncated body width ${vw(body)} should use the whole budget`);
     } finally {
       cleanCommentCache();
     }
@@ -1180,6 +1161,13 @@ describe('line 2 gives up its tail only for its own width', () => {
   });
 
   it('keeps rate limits when line 2 has the room, however long line 1 is', () => {
+    // 60, not MIN_SUPPORTED_COLS. At 61 this repo's line 1 spends 31 cells
+    // outside the columns, so 61 - 31 lands exactly on COLS_FLOOR and the
+    // bug this guards against — folding line 1's width into line 2's drop
+    // decision — leaves the tail in place anyway. Line 1 overflows by a cell
+    // at this width, which is what the line-fitting tests use the real
+    // minimum for.
+    const cols = 60;
     const result = runWithArgs({
       cwd: repo,
       model: { display_name: 'Opus 5' },
@@ -1190,13 +1178,17 @@ describe('line 2 gives up its tail only for its own width', () => {
       },
       prompt_cache: { warm: true },
     }, [], {
-      env: { ...process.env, COLUMNS: String(MIN_SUPPORTED_COLS) },
+      env: { ...process.env, COLUMNS: String(cols) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const line2 = stripAnsi(result.stdout).split('\n')[1];
     assert.ok(line2.includes('5h 10% 7d 20%'),
       `line 1's length must not strip line 2's tail: ${line2}`);
-    assert.ok(visualWidth(line2) <= MIN_SUPPORTED_COLS,
+    // The cache icon is dropped by the same rule one step later, so it has to
+    // be checked here too; the rate limits alone leave that step uncovered.
+    assert.ok(result.stdout.includes('\uF06D'),
+      `line 1's length must not strip the cache icon: ${line2}`);
+    assert.ok(visualWidth(line2) <= cols,
       `line 2 is ${visualWidth(line2)} cells: ${line2}`);
   });
 });

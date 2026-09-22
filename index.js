@@ -276,16 +276,16 @@ function padEnd(str, width) {
   return w < width ? str + ' '.repeat(width - w) : str;
 }
 
-// Code point ranges that occupy two terminal cells: East Asian Wide and
-// Fullwidth from the Unicode table, the emoji blocks, and the private use
-// area where Nerd Font keeps its icons. Generated from unicodedata, not
-// hand-listed — picking ranges by hand left ⭐ ⏰ ⬛ and the CJK extension
-// planes counting as one cell, which broke the width contract by tens of
-// cells on a single line.
+// Code point ranges that occupy two terminal cells. The East Asian Wide and
+// Fullwidth ranges are generated from unicodedata rather than hand-listed —
+// picking them by hand left ⭐ ⏰ ⬛ and the CJK extension planes counting as
+// one cell, which broke the width contract by tens of cells on a single line.
+// The emoji blocks and the private use area are added on top by hand, so
+// regenerating from unicodedata alone drops them.
 //
-// The private use area is the font's call, not Unicode's. Cica gives its
-// icons a two-cell advance; some other patched fonts advance one cell and
-// let the glyph spill into the next one. This assumes the former.
+// Unicode calls the private use area Ambiguous, so its width is the font's
+// to decide. Cica gives its icons a two-cell advance and this table follows
+// that; a font that advances one cell needs the range removed.
 const WIDE_RANGES = [
   [0x1100, 0x115F],
   [0x231A, 0x231B],
@@ -461,8 +461,9 @@ const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
 // content — ahead/behind and diff stats on line 1, rate limits on line 2 —
 // so the columns are sized against whichever line needs more room.
 // An icon plus its trailing space, and the same preceded by a column gap.
-// Icon width comes from visualWidth rather than a constant: the font decides
-// how many cells its private-use glyphs take.
+// Read through visualWidth rather than written as a number, so these stay
+// tied to WIDE_RANGES. That table fixes the icon at two cells; nothing here
+// asks the font, so a font that advances one cell needs the table changed.
 const ICON_SEG = visualWidth(ICON_FOLDER) + 1;
 const GAP_ICON_SEG = COL_SEP.length + ICON_SEG;
 
