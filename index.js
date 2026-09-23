@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
+const { ICONS, visualWidth } = require('./lib/widths');
 
 // ── --generate-comment mode (background LLM comment generation) ──
 const generateCommentIdx = process.argv.indexOf('--generate-comment');
@@ -237,21 +238,6 @@ const THEMES = {
 const themeName = (process.env.STATUSLINE_THEME || 'default').toLowerCase();
 const T = THEMES[themeName] || THEMES.default;
 
-// Nerd Font icons
-const ICON_FOLDER = '\uF07C';   //  folder-open
-const ICON_BRANCH = '\uF126';   //  code-fork
-const ICON_ROCKET = '\uF135';   //  rocket
-const ICON_OPUS = '\uF2DB';     //  microchip
-const ICON_SONNET = '\uF005';   //  star
-const ICON_HAIKU = '\uF0F4';    //  coffee
-const ICON_HEART = '\uF004';    //  heart
-const ICON_COMMENT = '\uF075';  //  comment
-const ICON_METER = '\uF0E4';       //  dashboard (rate limit usage)
-const ICON_WORKTREE = '\uF1E0';    //  share-alt (worktree session)
-const ICON_SESSION = '\uF0C5';     //  files-o (session name)
-const ICON_CACHE_WARM = '\uF06D';  //  fire (prompt cache warm)
-const ICON_CACHE_COLD = '\uF2DC';  //  snowflake (prompt cache cold)
-
 const COL_SEP = '  ';
 
 // Helper: execute shell command, return trimmed stdout or empty string
@@ -270,97 +256,9 @@ function exec(cmd) {
 // Pad to a width in terminal cells with trailing spaces. Every width in the
 // layout is a cell count, so that the two lines align and neither runs past
 // the terminal edge when a segment holds wide characters.
-// Defined above visualWidth, which it calls — both are hoisted.
 function padEnd(str, width) {
   const w = visualWidth(str);
   return w < width ? str + ' '.repeat(width - w) : str;
-}
-
-// Code point ranges that occupy two terminal cells: East Asian Wide and
-// Fullwidth from the Unicode table, plus the emoji blocks. Generated from
-// unicodedata, not hand-listed — picking ranges by hand left ⭐ ⏰ ⬛ and the
-// CJK extension planes counting as one cell, which broke the width contract
-// by tens of cells on a single line.
-const WIDE_RANGES = [
-  [0x1100, 0x115F],
-  [0x231A, 0x231B],
-  [0x2329, 0x232A],
-  [0x23E9, 0x23EC],
-  [0x23F0, 0x23F0],
-  [0x23F3, 0x23F3],
-  [0x25FD, 0x25FE],
-  [0x2600, 0x27BF],
-  [0x2B1B, 0x2B1C],
-  [0x2B50, 0x2B50],
-  [0x2B55, 0x2B55],
-  [0x2E80, 0x2E99],
-  [0x2E9B, 0x2EF3],
-  [0x2F00, 0x2FD5],
-  [0x2FF0, 0x2FFB],
-  [0x3000, 0x303E],
-  [0x3041, 0x3096],
-  [0x3099, 0x30FF],
-  [0x3105, 0x312F],
-  [0x3131, 0x318E],
-  [0x3190, 0x31E3],
-  [0x31F0, 0x321E],
-  [0x3220, 0x3247],
-  [0x3250, 0x4DBF],
-  [0x4E00, 0xA48C],
-  [0xA490, 0xA4C6],
-  [0xA960, 0xA97C],
-  [0xAC00, 0xD7A3],
-  [0xF900, 0xFAFF],
-  [0xFE10, 0xFE19],
-  [0xFE30, 0xFE52],
-  [0xFE54, 0xFE66],
-  [0xFE68, 0xFE6B],
-  [0xFF01, 0xFF60],
-  [0xFFE0, 0xFFE6],
-  [0x16FE0, 0x16FE4],
-  [0x16FF0, 0x16FF1],
-  [0x17000, 0x187F7],
-  [0x18800, 0x18CD5],
-  [0x18D00, 0x18D08],
-  [0x1AFF0, 0x1AFF3],
-  [0x1AFF5, 0x1AFFB],
-  [0x1AFFD, 0x1AFFE],
-  [0x1B000, 0x1B122],
-  [0x1B132, 0x1B132],
-  [0x1B150, 0x1B152],
-  [0x1B155, 0x1B155],
-  [0x1B164, 0x1B167],
-  [0x1B170, 0x1B2FB],
-  [0x1F004, 0x1F004],
-  [0x1F0CF, 0x1F0CF],
-  [0x1F18E, 0x1F18E],
-  [0x1F191, 0x1F19A],
-  [0x1F200, 0x1F202],
-  [0x1F210, 0x1F23B],
-  [0x1F240, 0x1F248],
-  [0x1F250, 0x1F251],
-  [0x1F260, 0x1F265],
-  [0x1F300, 0x1F9FF],
-  [0x1FA70, 0x1FAFF],
-  [0x20000, 0x2FFFD],
-  [0x30000, 0x3FFFD],
-];
-
-// Visual display width: a wide code point counts as 2 cells, the rest as 1.
-// Every width in the layout is measured here — column widths, truncation
-// and padding — so that what the arithmetic counts is what the terminal draws.
-function visualWidth(str) {
-  let w = 0;
-  for (const ch of str) {
-    const code = ch.codePointAt(0);
-    let wide = false;
-    for (const [lo, hi] of WIDE_RANGES) {
-      if (code < lo) break;
-      if (code <= hi) { wide = true; break; }
-    }
-    w += wide ? 2 : 1;
-  }
-  return w;
 }
 
 // Truncate to maxWidth visual cells (CJK/emoji = 2), appending ellipsis.
@@ -389,7 +287,7 @@ const displayDir = worktreeName
   : cwd.startsWith(homeDir)
     ? '~' + cwd.slice(homeDir.length)
     : cwd;
-const dirIcon = worktreeName ? ICON_WORKTREE : ICON_FOLDER;
+const dirIcon = worktreeName ? ICONS.WORKTREE : ICONS.FOLDER;
 
 // ── Git info ──
 let gitBranch = '';
@@ -455,10 +353,16 @@ const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
 // What each line spends outside the two columns. Both tails vary with their
 // content — ahead/behind and diff stats on line 1, rate limits on line 2 —
 // so the columns are sized against whichever line needs more room.
+// An icon plus its trailing space, and the same preceded by a column gap.
+// Measured rather than written as a number, so both follow lib/widths.js —
+// including when STATUSLINE_ICON_CELLS narrows the icons to one cell.
+const ICON_SEG = visualWidth(ICONS.FOLDER) + 1;
+const GAP_ICON_SEG = visualWidth(COL_SEP) + ICON_SEG;
+
 const line1Outside =
-  2 +                                   // dir icon + space
-  (gitBranch ? 4 : 0) +                 // COL_SEP + branch icon + space
-  4 +                                   // COL_SEP + rocket icon + space
+  ICON_SEG +                            // dir icon + space
+  (gitBranch ? GAP_ICON_SEG : 0) +      // COL_SEP + branch icon + space
+  GAP_ICON_SEG +                        // COL_SEP + rocket icon + space
   visualWidth(gitAheadBehind || '-') +
   visualWidth(statsText);
 
@@ -471,11 +375,14 @@ const COLS_FLOOR = 30;
 // Rate limits go first: the context bar is what the status line is for.
 let showCache = cacheWarm !== null;
 let showRate = rateText !== '';
+// The icon the sizing measures has to be the icon the line draws, so both read
+// this one binding.
+const cacheIcon = cacheWarm ? ICONS.CACHE_WARM : ICONS.CACHE_COLD;
 const line2Outside = () =>
-  2 +                                   // model icon + space
-  4 +                                   // COL_SEP + heart icon + space
-  (showCache ? 2 : 0) +                 // space + cache icon
-  (showRate ? 4 + visualWidth(rateText) : 0); // COL_SEP + meter icon + space
+  ICON_SEG +                            // model icon + space
+  GAP_ICON_SEG +                        // COL_SEP + heart icon + space
+  (showCache ? 1 + visualWidth(cacheIcon) : 0) +       // space + cache icon
+  (showRate ? GAP_ICON_SEG + visualWidth(rateText) : 0); // COL_SEP + meter icon + space
 // Only line 2's own width decides what line 2 gives up. Line 1's tail can be
 // the longer of the two, and dropping segments off line 2 does nothing for it.
 if (showRate && termCols - line2Outside() < COLS_FLOOR) showRate = false;
@@ -520,13 +427,13 @@ const gitBranchTrunc = truncStrVisual(gitBranch, col2Len);
 let line1 = `${T.folder}${dirIcon} ${padEnd(displayDirTrunc, col1Len)}${RESET}`;
 
 if (gitBranch) {
-  line1 += `${COL_SEP}${T.branch}${ICON_BRANCH} ${padEnd(gitBranchTrunc, col2Len)}${RESET}`;
+  line1 += `${COL_SEP}${T.branch}${ICONS.BRANCH} ${padEnd(gitBranchTrunc, col2Len)}${RESET}`;
 }
 
 if (gitAheadBehind) {
-  line1 += `${COL_SEP}${T.aheadBehind}${ICON_ROCKET} ${gitAheadBehind}${RESET}`;
+  line1 += `${COL_SEP}${T.aheadBehind}${ICONS.ROCKET} ${gitAheadBehind}${RESET}`;
 } else {
-  line1 += `${COL_SEP}${T.dim}${ICON_ROCKET} -${RESET}`;
+  line1 += `${COL_SEP}${T.dim}${ICONS.ROCKET} -${RESET}`;
 }
 
 line1 += statsDisplay;
@@ -537,19 +444,19 @@ line1 += statsDisplay;
 if (sessionName) {
   const line1Len =
     line1Outside + col1Len + (gitBranch ? col2Len : 0);
-  const sessionRoom = termCols - line1Len - 4; // COL_SEP(2) + icon(1) + space(1)
+  const sessionRoom = termCols - line1Len - GAP_ICON_SEG;
   if (sessionRoom >= 4) {
     const label = truncStrVisual(sessionName, sessionRoom);
-    line1 += `${COL_SEP}${T.dim}${ICON_SESSION} ${label}${RESET}`;
+    line1 += `${COL_SEP}${T.dim}${ICONS.SESSION} ${label}${RESET}`;
   }
 }
 
 // ── Line 2: model + context bar + cache warmth + rate limits ──
 let modelIcon;
-if (model.includes('Opus')) modelIcon = ICON_OPUS;
-else if (model.includes('Sonnet')) modelIcon = ICON_SONNET;
-else if (model.includes('Haiku')) modelIcon = ICON_HAIKU;
-else modelIcon = ICON_SONNET;
+if (model.includes('Opus')) modelIcon = ICONS.OPUS;
+else if (model.includes('Sonnet')) modelIcon = ICONS.SONNET;
+else if (model.includes('Haiku')) modelIcon = ICONS.HAIKU;
+else modelIcon = ICONS.SONNET;
 
 const modelDisplay = modelTrunc + effortSuffix;
 let line2 = `${T.model}${modelIcon} ${padEnd(modelDisplay, col1Len)}${RESET}`;
@@ -574,21 +481,20 @@ if (usedPct != null && usedPct !== '') {
   const ctxPad = col2Len - ctxTextLen;
   const ctxPadding = ctxPad > 0 ? ' '.repeat(ctxPad) : '';
 
-  line2 += `${COL_SEP}${barColor}${ICON_HEART} [${barFilled}${barEmpty}]${remaining}%${ctxPadding}${RESET}`;
+  line2 += `${COL_SEP}${barColor}${ICONS.HEART} [${barFilled}${barEmpty}]${remaining}%${ctxPadding}${RESET}`;
 } else {
-  line2 += `${COL_SEP}${T.dim}${ICON_HEART} ${' '.repeat(col2Len)}${RESET}`;
+  line2 += `${COL_SEP}${T.dim}${ICONS.HEART} ${' '.repeat(col2Len)}${RESET}`;
 }
 
 // Cache warmth sits next to the context bar: both say how much the next
 // request has to re-send.
 if (showCache) {
   const cacheColor = cacheWarm ? T.barSafe : T.dim;
-  const cacheIcon = cacheWarm ? ICON_CACHE_WARM : ICON_CACHE_COLD;
   line2 += ` ${cacheColor}${cacheIcon}${RESET}`;
 }
 
 if (showRate) {
-  line2 += `${COL_SEP}${T.meter}${ICON_METER} ${rateText}${RESET}`;
+  line2 += `${COL_SEP}${T.meter}${ICONS.METER} ${rateText}${RESET}`;
 }
 
 // ── Colleague comment (optional 3rd line) ──
@@ -649,7 +555,7 @@ if (colleagueInstruction !== null) {
 
 let output = `${line1}\n${line2}`;
 if (cachedComment) {
-  const commentMaxLen = Math.max(20, termCols - 4);
-  output += `\n${T.dim}${ICON_COMMENT} ${truncStrVisual(cachedComment, commentMaxLen)}${RESET}`;
+  const commentMaxLen = Math.max(20, termCols - ICON_SEG);
+  output += `\n${T.dim}${ICONS.COMMENT} ${truncStrVisual(cachedComment, commentMaxLen)}${RESET}`;
 }
 process.stdout.write(output);

@@ -4,11 +4,13 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// The suite measures the default two-cell layout, and the one-cell block below
+// sets STATUSLINE_ICON_CELLS per render. Drop an inherited one so the results
+// do not depend on the shell the tests were started from.
+delete process.env.STATUSLINE_ICON_CELLS;
+const { ICONS, PRIVATE_USE_RANGES, visualWidth } = require('../lib/widths');
 
 const INDEX = path.join(__dirname, '..', 'index.js');
-const CACHE_DIR = path.join(os.homedir(), '.claude', 'cache');
-// /tmp is not a git repo, so cacheKey falls back to 'default'
-const COMMENT_CACHE = path.join(CACHE_DIR, 'statusline-comment-default.json');
 const REPO_CWD = path.join(__dirname, '..');
 
 const hasClaudeAuth = (() => {
@@ -46,10 +48,6 @@ function runWithArgs(input, args = [], options = {}) {
   } catch (err) {
     return { stdout: err.stdout || '', exitCode: err.status };
   }
-}
-
-function cleanCommentCache() {
-  try { fs.rmSync(COMMENT_CACHE, { force: true }); } catch {}
 }
 
 // Strip ANSI escape codes and OSC8 hyperlink sequences
@@ -250,9 +248,40 @@ describe('colleague comments', () => {
     context_window: { used_percentage: 30 },
   };
 
+  // index.js keeps the comment under $HOME and, when the cache is missing or
+  // stale, spawns a detached --generate-comment that writes it once claude
+  // answers — seconds after the test that triggered it has finished. Sharing
+  // the real home let that write land on the fixture a later test had just
+  // put there, and the suite failed on a different test about one run in
+  // several. Give this block its own home and a claude that answers with
+  // nothing, so no write is in flight and running the tests bills no claude -p.
+  let homeDir;
+  let commentCache;
+  let colleagueEnv;
+
+  before(() => {
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccsl-colleague-'));
+    const binDir = path.join(homeDir, 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const stub = path.join(binDir, 'claude');
+    fs.writeFileSync(stub, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(stub, 0o755);
+    // /tmp is not a git repo, so index.js falls back to the 'default' cache key.
+    commentCache = path.join(homeDir, '.claude', 'cache', 'statusline-comment-default.json');
+    colleagueEnv = { ...process.env, HOME: homeDir, PATH: `${binDir}:${process.env.PATH}` };
+  });
+
+  after(() => {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  const cleanCommentCache = () => {
+    try { fs.rmSync(commentCache, { force: true }); } catch {}
+  };
+
   it('--generate-comment calls claude CLI and exits cleanly', { skip: !hasClaudeAuth && 'claude CLI not installed or not authenticated', timeout: 30000 }, () => {
     const ctx = JSON.stringify({ branch: 'main', changedFiles: [], time: '2026/01/01 00:00:00', hpRemaining: 55, instruction: 'test', cacheKey: 'test' });
-    const env = { ...process.env };
+    const env = { ...process.env, HOME: homeDir };
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE_ENTRYPOINT;
     delete env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS;
@@ -262,7 +291,7 @@ describe('colleague comments', () => {
 
   it('--colleague-instruction without cached comment outputs 2 lines', () => {
     cleanCommentCache();
-    const result = runWithArgs(stdinData, ['--colleague-instruction', 'test persona']);
+    const result = runWithArgs(stdinData, ['--colleague-instruction', 'test persona'], { env: colleagueEnv });
     assert.equal(result.exitCode, 0);
     const lines = result.stdout.split('\n');
     assert.equal(lines.length, 2, 'should output 2 lines when no cache exists');
@@ -271,11 +300,11 @@ describe('colleague comments', () => {
   it('--colleague-instruction with pre-created cache outputs 3 lines with comment', () => {
     cleanCommentCache();
     try {
-      const cacheDir = path.dirname(COMMENT_CACHE);
+      const cacheDir = path.dirname(commentCache);
       fs.mkdirSync(cacheDir, { recursive: true });
-      fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment: 'テストコメント' }));
+      fs.writeFileSync(commentCache, JSON.stringify({ comment: 'テストコメント' }));
 
-      const result = runWithArgs(stdinData, ['--colleague-instruction', 'test persona']);
+      const result = runWithArgs(stdinData, ['--colleague-instruction', 'test persona'], { env: colleagueEnv });
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 3, 'should output 3 lines with cached comment');
@@ -290,11 +319,11 @@ describe('colleague comments', () => {
   it('without --colleague-instruction always outputs 2 lines even if cache exists', () => {
     cleanCommentCache();
     try {
-      const cacheDir = path.dirname(COMMENT_CACHE);
+      const cacheDir = path.dirname(commentCache);
       fs.mkdirSync(cacheDir, { recursive: true });
-      fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment: 'テストコメント' }));
+      fs.writeFileSync(commentCache, JSON.stringify({ comment: 'テストコメント' }));
 
-      const result = run(stdinData);
+      const result = runWithArgs(stdinData, [], { env: colleagueEnv });
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 2, 'should output 2 lines without --colleague-instruction');
@@ -306,14 +335,14 @@ describe('colleague comments', () => {
   it('stale cache does not show comment', () => {
     cleanCommentCache();
     try {
-      const cacheDir = path.dirname(COMMENT_CACHE);
+      const cacheDir = path.dirname(commentCache);
       fs.mkdirSync(cacheDir, { recursive: true });
-      fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment: '古いコメント' }));
+      fs.writeFileSync(commentCache, JSON.stringify({ comment: '古いコメント' }));
       // Set mtime to 10 minutes ago
       const past = new Date(Date.now() - 600000);
-      fs.utimesSync(COMMENT_CACHE, past, past);
+      fs.utimesSync(commentCache, past, past);
 
-      const result = runWithArgs(stdinData, ['--colleague-instruction', 'test']);
+      const result = runWithArgs(stdinData, ['--colleague-instruction', 'test'], { env: colleagueEnv });
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 2, 'should output 2 lines when cache is stale');
@@ -322,59 +351,54 @@ describe('colleague comments', () => {
     }
   });
 
-  // Visual-cell width helper mirroring index.js#visualWidth so tests can assert
-  // the post-truncation body stays within terminal columns regardless of the
-  // mix of ASCII / kana / kanji / emoji / dingbats in the input.
-  function vw(s) {
-    let w = 0;
-    for (const ch of s) {
-      const c = ch.codePointAt(0);
-      const wide =
-        (c >= 0x1100 && c <= 0x115F) ||
-        (c >= 0x2600 && c <= 0x27BF) ||
-        (c >= 0x2E80 && c <= 0x303F) ||
-        (c >= 0x3041 && c <= 0x33FF) ||
-        (c >= 0x3400 && c <= 0x4DBF) ||
-        (c >= 0x4E00 && c <= 0x9FFF) ||
-        (c >= 0xA000 && c <= 0xA4CF) ||
-        (c >= 0xAC00 && c <= 0xD7A3) ||
-        (c >= 0xF900 && c <= 0xFAFF) ||
-        (c >= 0xFE30 && c <= 0xFE4F) ||
-        (c >= 0xFF00 && c <= 0xFF60) ||
-        (c >= 0xFFE0 && c <= 0xFFE6) ||
-        (c >= 0x1F300 && c <= 0x1F9FF) ||
-        (c >= 0x1FA70 && c <= 0x1FAFF);
-      w += wide ? 2 : 1;
-    }
-    return w;
-  }
+  // Measure with the layout's own width model, imported rather than copied.
+  // A second copy of the ranges lived here and drifted: it counted Nerd Font
+  // icons as one cell after the layout moved to two, and every assertion
+  // stayed green because both sides of the comparison used the stale copy.
+  const vw = visualWidth;
 
   // Render a cached comment under COLUMNS=40 and return the comment-line body
   // (after the icon + space prefix) along with the full stripped line.
   function renderCachedComment(comment, columns = '40') {
-    fs.mkdirSync(path.dirname(COMMENT_CACHE), { recursive: true });
-    fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment }));
+    fs.mkdirSync(path.dirname(commentCache), { recursive: true });
+    fs.writeFileSync(commentCache, JSON.stringify({ comment }));
     const result = runWithArgs(stdinData, ['--colleague-instruction', 'test'], {
-      env: { ...process.env, COLUMNS: columns },
+      env: { ...colleagueEnv, COLUMNS: columns },
     });
     assert.equal(result.exitCode, 0);
     const lines = result.stdout.split('\n');
     assert.equal(lines.length, 3, 'should still emit a comment line');
     const commentLine = stripAnsi(lines[2]);
-    // Strip leading icon (private-use Nerd Font glyph, 1 cell) and the space.
+    // Strip the leading icon (one code point) and the space after it.
     const body = commentLine.replace(/^[^\s]\s/, '');
     return { commentLine, body };
   }
 
+  // The comment line is "<icon><space><body>", so the body gets the terminal
+  // minus the icon and the space after it. index.js measures ICONS.FOLDER for
+  // that prefix and floors the result at 20, so a narrow terminal still shows
+  // a comment. Both halves are read rather than written out, so a test that
+  // passes a different COLUMNS is measured against that terminal. Every render
+  // in this block runs at the default two cells; the one-cell layout is covered
+  // by its own block, which does not draw a comment line.
+  const ICON_PREFIX = visualWidth(ICONS.FOLDER) + 1;
+  const commentBudget = (columns) => Math.max(20, Number(columns) - ICON_PREFIX);
+  const COMMENT_BUDGET = commentBudget(40);
+
   it('long Japanese comment is truncated at visual-cell budget with ellipsis', () => {
     cleanCommentCache();
     try {
-      // 60 hiragana chars = ~120 visual cells; with COLUMNS=40 (budget=36),
+      // 60 hiragana chars = ~120 visual cells; with COLUMNS=40 (see COMMENT_BUDGET),
       // the comment must be cut and end with …
       const longComment = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをんあいうえおかきくけこ';
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= 36, `truncated body visual width ${vw(body)} should fit COLUMNS-4=36`);
+      // Within one cell of the budget, not just under it. A looser width model
+      // would still satisfy <= and let the comment line overflow unnoticed.
+      // The slack is one cell because a two-cell character cannot fill an odd
+      // remainder once the ellipsis has taken its cell.
+      assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
+        `truncated body visual width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
     } finally {
       cleanCommentCache();
     }
@@ -383,7 +407,7 @@ describe('colleague comments', () => {
   it('long ASCII comment is truncated with ellipsis (legacy code-unit semantics preserved)', () => {
     cleanCommentCache();
     try {
-      // 80 ASCII chars = 80 visual cells; with COLUMNS=40 (budget=36),
+      // 80 ASCII chars = 80 visual cells; with COLUMNS=40 (see COMMENT_BUDGET),
       // the legacy behavior was: result length === budget (35 chars + …).
       // visualWidth(ASCII)==length, so the new semantics must produce the
       // identical output for ASCII-only input.
@@ -391,10 +415,10 @@ describe('colleague comments', () => {
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
       // ASCII => visual width === string length; truncated to exactly budget.
-      assert.equal(body.length, 36, `ASCII truncation length should equal budget: got ${body.length}`);
-      assert.equal(vw(body), 36, `ASCII visual width should equal budget`);
+      assert.equal(body.length, COMMENT_BUDGET, `ASCII truncation length should equal budget: got ${body.length}`);
+      assert.equal(vw(body), COMMENT_BUDGET, `ASCII visual width should equal budget`);
       // The kept prefix must be the original characters (no width-rounding loss).
-      assert.equal(body.slice(0, 35), 'a'.repeat(35));
+      assert.equal(body.slice(0, COMMENT_BUDGET - 1), 'a'.repeat(COMMENT_BUDGET - 1));
     } finally {
       cleanCommentCache();
     }
@@ -404,11 +428,12 @@ describe('colleague comments', () => {
     cleanCommentCache();
     try {
       // 「漢」 = U+6F22 (CJK Unified Ideographs, range 0x4E00-0x9FFF, width 2).
-      // 40 kanji = 80 cells; budget 36 => must be cut.
+      // 40 kanji = 80 cells; the budget => must be cut.
       const longComment = '漢'.repeat(40);
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= 36, `CJK truncated body width ${vw(body)} should fit budget=36`);
+      assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
+        `CJK truncated body width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
     } finally {
       cleanCommentCache();
     }
@@ -418,11 +443,42 @@ describe('colleague comments', () => {
     cleanCommentCache();
     try {
       // 🎉 = U+1F389 (Emoji pictograph, range 0x1F300-0x1F9FF, width 2).
-      // 30 emoji = 60 cells; budget 36 => must be cut.
+      // 30 emoji = 60 cells; the budget => must be cut.
       const longComment = '🎉'.repeat(30);
       const { body } = renderCachedComment(longComment);
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
-      assert.ok(vw(body) <= 36, `emoji truncated body width ${vw(body)} should fit budget=36`);
+      assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
+        `emoji truncated body width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
+    } finally {
+      cleanCommentCache();
+    }
+  });
+
+  it('the comment line is measured against the terminal it is drawn in', () => {
+    // Every other test in this block runs at COLUMNS=40 and looks only at the
+    // body, so the width of the line itself has never been compared with the
+    // terminal. 140 is above the floor and 20 is below it, which puts both
+    // sides of the Math.max in the check.
+    cleanCommentCache();
+    try {
+      for (const columns of [String(MIN_SUPPORTED_COLS), '140', '20']) {
+        const longComment = 'あ'.repeat(120);
+        const { commentLine, body } = renderCachedComment(longComment, columns);
+        const budget = commentBudget(columns);
+        assert.ok(vw(body) >= budget - 1 && vw(body) <= budget,
+          `body is ${vw(body)} cells against a budget of ${budget} at COLUMNS=${columns}`);
+        // Once the body's 20-cell floor is above what the terminal has left,
+        // the line can run past the edge — the same call line 1's tail makes.
+        // Only the widths where the floor is not in play are held to fitting,
+        // so lowering the floor later stays a free choice rather than a
+        // failing test.
+        const floorWins = budget > Number(columns) - ICON_PREFIX;
+        if (!floorWins) {
+          assert.ok(vw(commentLine) <= Number(columns),
+            `comment line is ${vw(commentLine)} cells at COLUMNS=${columns}: ${commentLine}`);
+        }
+        cleanCommentCache();
+      }
     } finally {
       cleanCommentCache();
     }
@@ -431,7 +487,7 @@ describe('colleague comments', () => {
   it('comment fitting within budget is passed through unchanged (no ellipsis)', () => {
     cleanCommentCache();
     try {
-      // 10 hiragana = 20 cells, fits comfortably in budget=36.
+      // 10 hiragana = 20 cells, fits comfortably in the budget.
       const shortComment = 'おつかれさまです！';
       const { body } = renderCachedComment(shortComment);
       assert.ok(!body.endsWith('…'), `should not append ellipsis when within budget: ${JSON.stringify(body)}`);
@@ -656,94 +712,69 @@ describe('worktree and session name', () => {
   });
 });
 
-// Visual cell width. WIDE_RANGES is copied from index.js and must stay
-// identical: this is the only check on the width contract, so a different
-// width model here would measure something the command never used.
-// `test/width-ranges.test.js` fails if the two drift apart.
-const WIDE_RANGES = [
-  [0x1100, 0x115F],
-  [0x231A, 0x231B],
-  [0x2329, 0x232A],
-  [0x23E9, 0x23EC],
-  [0x23F0, 0x23F0],
-  [0x23F3, 0x23F3],
-  [0x25FD, 0x25FE],
-  [0x2600, 0x27BF],
-  [0x2B1B, 0x2B1C],
-  [0x2B50, 0x2B50],
-  [0x2B55, 0x2B55],
-  [0x2E80, 0x2E99],
-  [0x2E9B, 0x2EF3],
-  [0x2F00, 0x2FD5],
-  [0x2FF0, 0x2FFB],
-  [0x3000, 0x303E],
-  [0x3041, 0x3096],
-  [0x3099, 0x30FF],
-  [0x3105, 0x312F],
-  [0x3131, 0x318E],
-  [0x3190, 0x31E3],
-  [0x31F0, 0x321E],
-  [0x3220, 0x3247],
-  [0x3250, 0x4DBF],
-  [0x4E00, 0xA48C],
-  [0xA490, 0xA4C6],
-  [0xA960, 0xA97C],
-  [0xAC00, 0xD7A3],
-  [0xF900, 0xFAFF],
-  [0xFE10, 0xFE19],
-  [0xFE30, 0xFE52],
-  [0xFE54, 0xFE66],
-  [0xFE68, 0xFE6B],
-  [0xFF01, 0xFF60],
-  [0xFFE0, 0xFFE6],
-  [0x16FE0, 0x16FE4],
-  [0x16FF0, 0x16FF1],
-  [0x17000, 0x187F7],
-  [0x18800, 0x18CD5],
-  [0x18D00, 0x18D08],
-  [0x1AFF0, 0x1AFF3],
-  [0x1AFF5, 0x1AFFB],
-  [0x1AFFD, 0x1AFFE],
-  [0x1B000, 0x1B122],
-  [0x1B132, 0x1B132],
-  [0x1B150, 0x1B152],
-  [0x1B155, 0x1B155],
-  [0x1B164, 0x1B167],
-  [0x1B170, 0x1B2FB],
-  [0x1F004, 0x1F004],
-  [0x1F0CF, 0x1F0CF],
-  [0x1F18E, 0x1F18E],
-  [0x1F191, 0x1F19A],
-  [0x1F200, 0x1F202],
-  [0x1F210, 0x1F23B],
-  [0x1F240, 0x1F248],
-  [0x1F250, 0x1F251],
-  [0x1F260, 0x1F265],
-  [0x1F300, 0x1F9FF],
-  [0x1FA70, 0x1FAFF],
-  [0x20000, 0x2FFFD],
-  [0x30000, 0x3FFFD],
-];
+// Narrowest terminal the layout fits in, for the tail these fixtures use.
+// line1Outside is 31 cells: 3 for the dir icon and its space, 5 each for the
+// branch and rocket icons with the column gap in front of them, 6 for ↑12↓34,
+// and 12 for the diff stats — which carry their own leading space, so the
+// string measured is ' +1234/-5678'. COLS_FLOOR is 30, so below 61 the two
+// reserve more cells than the terminal has. A tail with more digits raises it:
+// ↑123↓456 with ' +12345/-67890' makes line1Outside 35 and the floor 65. The
+// 33-char branch only pushes the columns down onto their floor; it does not
+// move this number.
+const MIN_SUPPORTED_COLS = 61;
 
-function visualWidth(str) {
-  let w = 0;
-  for (const ch of str) {
-    const code = ch.codePointAt(0);
-    let wide = false;
-    for (const [lo, hi] of WIDE_RANGES) {
-      if (code < lo) break;
-      if (code <= hi) { wide = true; break; }
-    }
-    w += wide ? 2 : 1;
+describe('STATUSLINE_ICON_CELLS=1 lays out for a one-cell terminal', () => {
+  // Ghostty advances a Nerd Font icon one cell and has no setting for it, so
+  // the layout has to reserve one instead of two. Measure the output the way
+  // that terminal would: visualWidth is the two-cell model, so take a cell
+  // back for every private use code point in the line.
+  const isPrivateUse = (cp) => PRIVATE_USE_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi);
+  const narrowWidth = (line) =>
+    visualWidth(line) - [...line].filter((ch) => isPrivateUse(ch.codePointAt(0))).length;
+
+  const data = {
+    cwd: '/home/u/projects/a-fairly-long-project-directory',
+    model: { display_name: 'Opus 5 (1M context)' },
+    context_window: { used_percentage: 30 },
+    session_name: 'a-session-name-long-enough-to-use-the-room',
+    rate_limits: { five_hour: { used_percentage: 20 }, seven_day: { used_percentage: 44 } },
+  };
+
+  const render = (cols, narrow) => {
+    const env = { ...process.env, COLUMNS: String(cols) };
+    if (narrow) env.STATUSLINE_ICON_CELLS = '1';
+    else delete env.STATUSLINE_ICON_CELLS;
+    const result = runWithArgs(data, [], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    assert.equal(result.exitCode, 0);
+    return stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
+  };
+
+  for (const cols of [MIN_SUPPORTED_COLS, 80, 120]) {
+    it(`fits COLUMNS=${cols} measured one cell per icon`, () => {
+      const lines = render(cols, true);
+      assert.ok(lines.length >= 2, 'should print both lines');
+      for (const [i, line] of lines.entries()) {
+        const w = narrowWidth(line);
+        assert.ok(w <= cols, `line ${i + 1} is ${w} cells, over ${cols}: ${line}`);
+      }
+    });
   }
-  return w;
-}
+
+  it('gives the text the cells the icons no longer take', () => {
+    // Without this the suite would pass on output that ignored the setting,
+    // since a two-cell layout measured one cell per icon also fits.
+    const cols = 80;
+    const wide = render(cols, false);
+    const narrow = render(cols, true);
+    assert.notDeepEqual(narrow, wide, 'STATUSLINE_ICON_CELLS=1 changed nothing');
+    for (const [i, line] of narrow.entries()) {
+      assert.ok([...line].length > [...wide[i]].length,
+        `line ${i + 1} should hold more characters: ${line}`);
+    }
+  });
+});
 
 describe('rendered lines fit the terminal', () => {
-  // Below this the layout reserves more than the terminal has: maxContentCols
-  // has a floor of 30, and the columns have floors of their own.
-  const MIN_SUPPORTED_COLS = 60;
-
   // Every cwd here is outside a git repo. Pointing one at this checkout would
   // make the column widths depend on the path and the branch name, which
   // differ between a working copy and CI's detached checkout.
@@ -817,7 +848,10 @@ describe('rendered lines fit the terminal', () => {
   ];
 
   for (const [label, data] of inputs) {
-    for (const cols of [MIN_SUPPORTED_COLS, 80, 100, 120]) {
+    // These inputs have no git segment, so line 1's tail is short. This is a
+    // smoke test that both lines fit at several widths, not a check of the
+    // column floors — the MIN_SUPPORTED_COLS tests below cover those.
+    for (const cols of [55, 80, 100, 120]) {
       it(`${label} fits COLUMNS=${cols}`, () => {
         const result = runWithArgs(data, [], {
           env: { ...process.env, COLUMNS: String(cols) },
@@ -885,7 +919,7 @@ describe('a repo whose trailing segments are at their longest', () => {
     if (repo) fs.rmSync(repo, { recursive: true, force: true });
   });
 
-  for (const cols of [60, 80, 100, 120]) {
+  for (const cols of [MIN_SUPPORTED_COLS, 80, 100, 120]) {
     it(`fits COLUMNS=${cols}`, () => {
       const result = runWithArgs({
         cwd: repo,
@@ -1164,7 +1198,7 @@ describe('line 2 gives up its tail only for its own width', () => {
       effort: { level: 'xhigh' },
       context_window: { used_percentage: 30 },
     }, [], {
-      env: { ...process.env, COLUMNS: '60' },
+      env: { ...process.env, COLUMNS: String(MIN_SUPPORTED_COLS) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const line2 = stripAnsi(result.stdout).split('\n')[1];
@@ -1174,6 +1208,13 @@ describe('line 2 gives up its tail only for its own width', () => {
   });
 
   it('keeps rate limits when line 2 has the room, however long line 1 is', () => {
+    // The guard only bites at a width where line 1 asks for more than line 2:
+    // that is what makes folding line 1's width into line 2's drop decision
+    // change the outcome. Line 1 overflowing while line 2 fits is the
+    // observable form of that, and it is asserted below — without it, a
+    // one-cell change to COLS_FLOOR or to this fixture's branch name would
+    // leave the test green while covering nothing.
+    const cols = 60;
     const result = runWithArgs({
       cwd: repo,
       model: { display_name: 'Opus 5' },
@@ -1184,13 +1225,23 @@ describe('line 2 gives up its tail only for its own width', () => {
       },
       prompt_cache: { warm: true },
     }, [], {
-      env: { ...process.env, COLUMNS: '57' },
+      env: { ...process.env, COLUMNS: String(cols) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    const line2 = stripAnsi(result.stdout).split('\n')[1];
+    const [line1, line2] = stripAnsi(result.stdout).split('\n');
+    // The precondition: at this width line 1 wants more than the terminal has
+    // and line 2 does not. If this stops holding, the assertions below pass
+    // for both the fixed and the broken code and guard nothing.
+    assert.ok(visualWidth(line1) > cols,
+      `line 1 must be the one that overflows at ${cols} cells, or this guards nothing: ${line1}`);
+    assert.ok(visualWidth(line2) <= cols,
+      `line 2 is ${visualWidth(line2)} cells: ${line2}`);
     assert.ok(line2.includes('5h 10% 7d 20%'),
       `line 1's length must not strip line 2's tail: ${line2}`);
-    assert.ok(visualWidth(line2) <= 57, `line 2 is ${visualWidth(line2)} cells: ${line2}`);
+    // The cache icon is dropped by the same rule one step later, so it has to
+    // be checked here too; the rate limits alone leave that step uncovered.
+    assert.ok(result.stdout.includes('\uF06D'),
+      `line 1's length must not strip the cache icon: ${line2}`);
   });
 });
 
@@ -1202,7 +1253,9 @@ describe('wide characters outside the CJK blocks', () => {
     ['clocks and blocks', '⏰⌚⬛⬜⭕'.repeat(8)],
     ['CJK extension B', '𠀋𠮷'.repeat(10)],
   ]) {
-    for (const cols of [60, 80, 120]) {
+    // Wide characters only lengthen the session name, which is dropped when
+    // it does not fit, so these also work below the repo-wide minimum.
+    for (const cols of [55, 80, 120]) {
       it(`${label} fit COLUMNS=${cols}`, () => {
         const result = runWithArgs({
           cwd: '/tmp',
