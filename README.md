@@ -24,10 +24,12 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 
 - A terminal that advances [Nerd Font](https://www.nerdfonts.com/) icons **two cells**, and a font that draws them that wide, such as [Cica](https://github.com/miiton/Cica). The width arithmetic assumes two. The advance is the terminal's call, not the font's — the font only decides whether the glyph fits the space it is given. With a one-cell advance the glyph spills over the next cell, which hides the space after each icon and makes the columns look cramped.
 
-  Check a terminal in one line. The first `|` lands under the third one when icons take two cells, and under the second one when they take one:
+  Check a terminal in one line. The escapes spell U+F07C, the folder icon, in
+  octal so that any POSIX shell prints it. The first `|` lands under the third
+  one when icons take two cells, and under the second one when they take one:
 
   ```sh
-  printf '\uf07c|\nA|\nAA|\n'
+  printf '\357\201\274|\nA|\nAA|\n'
   ```
 
   What to set, as of September 2026. Each terminal's own documentation is the
@@ -36,9 +38,9 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 
   | Terminal | What to set |
   |---|---|
-  | [WezTerm](https://wezterm.org/config/lua/config/cell_widths.html) | `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. Nightly builds only, and a new tab is needed for a change to take effect |
-  | [Windows Terminal](https://learn.microsoft.com/en-us/windows/terminal/customize-settings/profile-advanced) | `"compatibility.ambiguousWidth": "wide"`, which widens every East Asian Ambiguous code point rather than the private use area alone |
-  | [Ghostty](https://ghostty.org/docs/config/reference) | Nothing to set: it has no option for this, and its icons stay one cell |
+  | [WezTerm](https://wezterm.org/config/lua/config/cell_widths.html) | `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. The option is marked "Since: Nightly Builds Only", so on a build without it the icons stay one cell — run the check above before believing the config took. Measured on `20260812-070121-fe3006ae`: reloading the config moves a font change into tabs that are already open but not a `cell_widths` change, so open a new tab |
+  | Windows Terminal | `"compatibility.ambiguousWidth": "wide"`, a **global** setting rather than a per-profile one ([schema](https://github.com/microsoft/terminal/blob/main/doc/cascadia/profiles.schema.json), under `Globals`). It widens every East Asian Ambiguous code point rather than the private use area alone |
+  | [Ghostty](https://ghostty.org/docs/config/reference) | Nothing to set: it has no option for the advance, and `adjust-icon-height` only changes how the glyph is drawn. Icons stay one cell, so drop the three entries marked `private use` from `WIDE_RANGES` in `index.js` instead |
 - Node.js >= 18
 
 ## Setup

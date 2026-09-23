@@ -435,17 +435,15 @@ describe('colleague comments', () => {
         const budget = commentBudget(columns);
         assert.ok(vw(body) >= budget - 1 && vw(body) <= budget,
           `body is ${vw(body)} cells against a budget of ${budget} at COLUMNS=${columns}`);
-        // Below the floor the body keeps its 20 cells and the line runs past
-        // the edge, the same call line 1's tail makes: a comment cut to a stub
-        // is worth less than a wrapped line. Above the floor the line fits.
-        const fits = vw(commentLine) <= Number(columns);
+        // Once the body's 20-cell floor is above what the terminal has left,
+        // the line can run past the edge — the same call line 1's tail makes.
+        // Only the widths where the floor is not in play are held to fitting,
+        // so lowering the floor later stays a free choice rather than a
+        // failing test.
         const floorWins = budget > Number(columns) - 3;
         if (!floorWins) {
-          assert.ok(fits,
+          assert.ok(vw(commentLine) <= Number(columns),
             `comment line is ${vw(commentLine)} cells at COLUMNS=${columns}: ${commentLine}`);
-        } else {
-          assert.ok(!fits,
-            `the floor should be what pushes the line past COLUMNS=${columns}, but it fit: ${commentLine}`);
         }
         cleanCommentCache();
       }
@@ -853,8 +851,9 @@ describe('rendered lines fit the terminal', () => {
   ];
 
   for (const [label, data] of inputs) {
-    // These inputs keep line 1's tail short, so they fit well below the
-    // repo-wide minimum. A narrow width here exercises the column floors.
+    // These inputs have no git segment, so line 1's tail is short and the
+    // columns never reach their floor — measured at 36 and 37 cells from 40
+    // columns up. This is a smoke test across widths, not floor coverage.
     for (const cols of [55, 80, 100, 120]) {
       it(`${label} fits COLUMNS=${cols}`, () => {
         const result = runWithArgs(data, [], {

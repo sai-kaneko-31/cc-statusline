@@ -61,8 +61,7 @@ describe('icon width', () => {
     // past while the count still looked plausible, which is the hole this test
     // exists to close. So take all of them first and account for each one:
     // anything that is not a quoted literal has to be named here on purpose.
-    const all = [...src.matchAll(/^const (ICON_[A-Z_]+) = (.*)$/gm)];
-    assert.ok(all.length >= 14, `expected the icon constants, got ${all.length}`);
+    const all = [...src.matchAll(/^const (ICON_[A-Z_]+)\s*=\s*(.*)$/gm)];
     const derived = all.filter(([, , value]) => !/^['"`]/.test(value)).map(([, name]) => name);
     assert.deepEqual(derived, ['ICON_SEG'],
       `ICON_SEG is a cell count, not an icon. Anything else here is an icon this test cannot read: ${derived.join(', ')}`);
@@ -88,5 +87,12 @@ describe('icon width', () => {
       .map(([name, cp]) => `${name} (U+${cp.toString(16).toUpperCase()})`);
     assert.deepEqual(outside, [],
       `these icons would be measured as one cell: ${outside.join(', ')}`);
+    // Exact, not a floor: a floor passes when a declaration goes unread, which
+    // is the case this test exists to catch. Checked after the widths so that
+    // an icon outside WIDE_RANGES reports that instead of the count. Bump it
+    // when an icon is added.
+    const EXPECTED_ICON_CONSTANTS = 14;
+    assert.equal(all.length, EXPECTED_ICON_CONSTANTS,
+      `expected ${EXPECTED_ICON_CONSTANTS} ICON_ declarations, read ${all.length}: ${all.map(([, n]) => n).join(', ')}`);
   });
 });

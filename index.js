@@ -294,11 +294,9 @@ function padEnd(str, width) {
 // unicodedata, so it stays.
 //
 // The private use planes are listed whole rather than the ranges a font happens
-// to fill, so that adding icons never needs an edit here. Planes 15 and 16 are
-// private use end to end, so widening them catches nothing standard. Fonts do
-// reach plane 15: Cica v5.0.3 carries 2283 glyphs across U+F2500-U+FFD46, its
-// patcher having copied them up from the BMP by adding 0xF0000. Plane 16 holds
-// nothing today.
+// to fill, so that adding icons never needs an edit here when a font gains or
+// moves glyphs. Planes 15 and 16 are private use end to end, so widening them
+// catches nothing standard.
 const WIDE_RANGES = [
   [0x1100, 0x115F],
   [0x231A, 0x231B],
