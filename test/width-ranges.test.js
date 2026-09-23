@@ -1,98 +1,109 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('fs');
-const path = require('path');
+const { execFileSync } = require('child_process');
+const {
+  ICON_CELLS, ICONS, PRIVATE_USE_RANGES, WIDE_RANGES, visualWidth,
+} = require('../lib/widths');
 
-// statusline.test.js measures rendered lines with its own copy of
-// index.js's WIDE_RANGES. A copy drifts silently: the width contract would
-// still look green while being checked against ranges the command never
-// used. Compare the two range lists directly.
-const RANGE_RE = /\[(0x[0-9A-Fa-f]+), (0x[0-9A-Fa-f]+)\]/g;
+const WIDTHS = require.resolve('../lib/widths');
 
-function rangesOf(file) {
-  const src = fs.readFileSync(path.join(__dirname, file), 'utf8');
-  const start = src.indexOf('const WIDE_RANGES = [');
-  assert.ok(start !== -1, `WIDE_RANGES not found in ${file}`);
-  const end = src.indexOf('];', start);
-  assert.ok(end !== -1, `end of WIDE_RANGES not found in ${file}`);
-  const body = src.slice(start, end);
-  const found = [...body.matchAll(RANGE_RE)].map(
-    ([, lo, hi]) => `${parseInt(lo, 16)}-${parseInt(hi, 16)}`
-  );
-  assert.ok(found.length > 0, `no ranges parsed out of WIDE_RANGES in ${file}`);
-  return found;
+// lib/widths.js reads STATUSLINE_ICON_CELLS once, when it is required, so the
+// other setting has to be measured in a second process.
+function widthsUnder(cells) {
+  const script = `
+    const w = require(process.argv[1]);
+    console.log(JSON.stringify({
+      cells: w.ICON_CELLS,
+      ranges: w.WIDE_RANGES,
+      folder: w.visualWidth(w.ICONS.FOLDER),
+      cjkCompat: w.visualWidth('\\uF900'),
+      japanese: w.visualWidth('\\u3042'),
+    }));
+  `;
+  const env = { ...process.env };
+  if (cells === null) delete env.STATUSLINE_ICON_CELLS;
+  else env.STATUSLINE_ICON_CELLS = cells;
+  const out = execFileSync(process.execPath, ['-e', script, WIDTHS], {
+    env, encoding: 'utf8', timeout: 10000,
+  });
+  return JSON.parse(out);
 }
 
-describe('visual width ranges', () => {
-  it('the test copy matches index.js', () => {
-    const source = rangesOf('../index.js');
-    const copy = rangesOf('statusline.test.js');
-    assert.deepEqual(copy, source,
-      'statusline.test.js WIDE_RANGES drifted from index.js');
+describe('icon width', () => {
+  it('every icon the layout draws is the same two cells', () => {
+    // The arithmetic reserves ICON_SEG cells per icon and measures ICONS.FOLDER
+    // for all of them, so the whole set has to agree. Reading ICONS rather than
+    // index.js's source text means an icon added in any spelling is checked.
+    assert.ok(Object.keys(ICONS).length > 0, 'ICONS is empty');
+    const wrong = Object.entries(ICONS)
+      .filter(([, ch]) => visualWidth(ch) !== 2)
+      .map(([name, ch]) => `${name} (U+${ch.codePointAt(0).toString(16).toUpperCase()}) = ${visualWidth(ch)}`);
+    assert.deepEqual(wrong, [], `these icons are not two cells: ${wrong.join(', ')}`);
+  });
+
+  it('each icon is a single code point', () => {
+    // visualWidth sums the cells of every code point, so a two-code-point
+    // icon would measure four and pass the check above while the terminal
+    // draws one glyph.
+    const multi = Object.entries(ICONS)
+      .filter(([, ch]) => [...ch].length !== 1)
+      .map(([name, ch]) => `${name} (${[...ch].length} code points: ${JSON.stringify(ch)})`);
+    assert.deepEqual(multi, [], `these icons are not one code point: ${multi.join(', ')}`);
+  });
+
+  it('the private use ranges are entries of the table they filter', () => {
+    // PRIVATE_USE_RANGES names the entries STATUSLINE_ICON_CELLS removes. If
+    // one of them stopped matching an entry in the table, the filter would
+    // quietly drop nothing and a one-cell terminal would keep the two-cell
+    // arithmetic. Measured with the default, where the table still has them.
+    assert.equal(ICON_CELLS, 2, 'run this suite without STATUSLINE_ICON_CELLS');
+    const missing = PRIVATE_USE_RANGES.filter(
+      ([lo, hi]) => !WIDE_RANGES.some(([l, h]) => l === lo && h === hi)
+    ).map(([lo, hi]) => `[0x${lo.toString(16)}, 0x${hi.toString(16)}]`);
+    assert.deepEqual(missing, [], `not in WIDE_RANGES: ${missing.join(', ')}`);
+  });
+
+  it('the ranges stay sorted by their low end', () => {
+    // visualWidth stops at the first range whose low end is above the code
+    // point, so an out-of-order entry is never reached and its code points
+    // silently measure one cell.
+    for (let i = 1; i < WIDE_RANGES.length; i += 1) {
+      const [prevLo, prevHi] = WIDE_RANGES[i - 1];
+      const [lo] = WIDE_RANGES[i];
+      assert.ok(lo > prevHi,
+        `[0x${lo.toString(16)}, ...] follows [0x${prevLo.toString(16)}, 0x${prevHi.toString(16)}]`);
+    }
   });
 });
 
-describe('icon width', () => {
-  it('index.js counts a Nerd Font icon as two cells', () => {
-    // The private use areas are added to WIDE_RANGES by hand. Regenerating the
-    // table from unicodedata alone drops them, and the layout then reserves one
-    // cell per icon while the terminal draws two. Without this the only test
-    // that notices is an unrelated assertion about the comment budget.
-    const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
-    // ICON_FOLDER is what ICON_SEG measures, so read it rather than repeating
-    // the code point here.
-    const iconMatch = src.match(/const ICON_FOLDER = '\\u([0-9A-Fa-f]+)'/);
-    assert.ok(iconMatch, 'ICON_FOLDER not found in index.js');
-    const icon = parseInt(iconMatch[1], 16);
-    const ranges = rangesOf('../index.js').map((r) => r.split('-').map(Number));
-    const covered = ranges.some(([lo, hi]) => icon >= lo && icon <= hi);
-    assert.ok(covered,
-      `U+${icon.toString(16).toUpperCase()} (ICON_FOLDER) must be in WIDE_RANGES`);
+describe('STATUSLINE_ICON_CELLS', () => {
+  it('defaults to two cells', () => {
+    assert.equal(ICON_CELLS, 2);
+    assert.equal(widthsUnder(null).cells, 2);
   });
 
-  it('every icon the layout draws is the same two cells', () => {
-    // ICON_SEG measures ICON_FOLDER but stands in for every icon, and the cache
-    // slot measures whichever of the two cache icons the line draws. Both hold
-    // only while the whole set is in WIDE_RANGES, so check the set rather than
-    // the one icon the arithmetic happens to read.
-    const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
-    // Read every ICON_ declaration, then resolve each one's code point. A regex
-    // that only matched one spelling would let an icon written another way slip
-    // past while the count still looked plausible, which is the hole this test
-    // exists to close. So take all of them first and account for each one:
-    // anything that is not a quoted literal has to be named here on purpose.
-    const all = [...src.matchAll(/^const (ICON_[A-Z_]+)\s*=\s*(.*)$/gm)];
-    const derived = all.filter(([, , value]) => !/^['"`]/.test(value)).map(([, name]) => name);
-    assert.deepEqual(derived, ['ICON_SEG'],
-      `ICON_SEG is a cell count, not an icon. Anything else here is an icon this test cannot read: ${derived.join(', ')}`);
-    const declarations = all
-      .filter(([, , value]) => /^['"`]/.test(value))
-      .map(([, name, value]) => {
-        const quote = value[0];
-        const literal = value.match(new RegExp(`^${quote}((?:\\\\.|[^\\\\${quote}])*)${quote}`));
-        assert.ok(literal, `${name} is not a closed string literal: ${value}`);
-        return [name, literal[1]];
-      });
-    const icons = declarations.map(([name, literal]) => {
-      const escaped = literal.match(/^\\u\{?([0-9A-Fa-f]+)\}?$/);
-      if (escaped) return [name, parseInt(escaped[1], 16)];
-      const points = [...literal];
-      assert.equal(points.length, 1,
-        `${name} is not a single code point, so its width cannot be checked: ${literal}`);
-      return [name, points[0].codePointAt(0)];
-    });
-    const ranges = rangesOf('../index.js').map((r) => r.split('-').map(Number));
-    const outside = icons
-      .filter(([, cp]) => !ranges.some(([lo, hi]) => cp >= lo && cp <= hi))
-      .map(([name, cp]) => `${name} (U+${cp.toString(16).toUpperCase()})`);
-    assert.deepEqual(outside, [],
-      `these icons would be measured as one cell: ${outside.join(', ')}`);
-    // Exact, not a floor: a floor passes when a declaration goes unread, which
-    // is the case this test exists to catch. Checked after the widths so that
-    // an icon outside WIDE_RANGES reports that instead of the count. Bump it
-    // when an icon is added.
-    const EXPECTED_ICON_CONSTANTS = 14;
-    assert.equal(all.length, EXPECTED_ICON_CONSTANTS,
-      `expected ${EXPECTED_ICON_CONSTANTS} ICON_ declarations, read ${all.length}: ${all.map(([, n]) => n).join(', ')}`);
+  it('set to 1, it drops the private use ranges and nothing else', () => {
+    const two = widthsUnder(null);
+    const one = widthsUnder('1');
+    assert.equal(one.cells, 1);
+    assert.equal(one.folder, 1, 'an icon should measure one cell');
+    // The CJK compatibility block sits next to the BMP private use area but is
+    // East Asian Wide, and Japanese text is wide in every terminal. Neither
+    // depends on how the terminal advances an icon.
+    assert.equal(one.cjkCompat, 2, 'U+F900 is East Asian Wide, not private use');
+    assert.equal(one.japanese, 2, 'U+3042 is East Asian Wide, not private use');
+    const dropped = two.ranges.filter(
+      ([lo]) => !one.ranges.some(([lo2]) => lo2 === lo)
+    );
+    assert.deepEqual(dropped, PRIVATE_USE_RANGES,
+      'exactly the private use ranges should go');
+  });
+
+  it('any other value leaves the icons at two cells', () => {
+    // The layout is built for two, so only the documented opt-in narrows it.
+    for (const value of ['', '0', '2', 'true', 'yes']) {
+      assert.equal(widthsUnder(value).folder, 2,
+        `STATUSLINE_ICON_CELLS=${JSON.stringify(value)} should not narrow the icons`);
+    }
   });
 });

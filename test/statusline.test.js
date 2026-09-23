@@ -4,6 +4,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { ICONS, PRIVATE_USE_RANGES, visualWidth } = require('../lib/widths');
 
 const INDEX = path.join(__dirname, '..', 'index.js');
 const CACHE_DIR = path.join(os.homedir(), '.claude', 'cache');
@@ -322,10 +323,10 @@ describe('colleague comments', () => {
     }
   });
 
-  // Same width model as the layout. A second copy of the ranges here drifted:
-  // it counted Nerd Font icons as one cell after the layout moved to two, and
-  // width-ranges.test.js only compares index.js with the WIDE_RANGES table at
-  // the top of this file.
+  // Measure with the layout's own width model, imported rather than copied.
+  // A second copy of the ranges lived here and drifted: it counted Nerd Font
+  // icons as one cell after the layout moved to two, and every assertion
+  // stayed green because both sides of the comparison used the stale copy.
   const vw = visualWidth;
 
   // Render a cached comment under COLUMNS=40 and return the comment-line body
@@ -346,11 +347,13 @@ describe('colleague comments', () => {
   }
 
   // The comment line is "<icon><space><body>", so the body gets the terminal
-  // minus the icon's two cells (see WIDE_RANGES) and the space after it.
-  // index.js floors it at 20 so a narrow terminal still shows a comment.
-  // Derived from the argument rather than written out, so a test that passes a
-  // different COLUMNS is measured against that terminal and not against 40.
-  const commentBudget = (columns) => Math.max(20, Number(columns) - 3);
+  // minus the icon and the space after it. index.js measures ICONS.FOLDER for
+  // that prefix and floors the result at 20, so a narrow terminal still shows
+  // a comment. Both halves are read rather than written out: a test that
+  // passes a different COLUMNS, and a run with STATUSLINE_ICON_CELLS=1, are
+  // then measured against what index.js itself used.
+  const commentBudget = (columns) =>
+    Math.max(20, Number(columns) - (visualWidth(ICONS.FOLDER) + 1));
   const COMMENT_BUDGET = commentBudget(40);
 
   it('long Japanese comment is truncated at visual-cell budget with ellipsis', () => {
@@ -691,91 +694,56 @@ describe('worktree and session name', () => {
 // move this number.
 const MIN_SUPPORTED_COLS = 61;
 
-// Visual cell width. WIDE_RANGES is copied from index.js and must stay
-// identical: this is the only check on the width contract, so a different
-// width model here would measure something the command never used.
-// `test/width-ranges.test.js` fails if the two drift apart.
-const WIDE_RANGES = [
-  [0x1100, 0x115F],
-  [0x231A, 0x231B],
-  [0x2329, 0x232A],
-  [0x23E9, 0x23EC],
-  [0x23F0, 0x23F0],
-  [0x23F3, 0x23F3],
-  [0x25FD, 0x25FE],
-  [0x2600, 0x27BF],
-  [0x2B1B, 0x2B1C],
-  [0x2B50, 0x2B50],
-  [0x2B55, 0x2B55],
-  [0x2E80, 0x2E99],
-  [0x2E9B, 0x2EF3],
-  [0x2F00, 0x2FD5],
-  [0x2FF0, 0x2FFB],
-  [0x3000, 0x303E],
-  [0x3041, 0x3096],
-  [0x3099, 0x30FF],
-  [0x3105, 0x312F],
-  [0x3131, 0x318E],
-  [0x3190, 0x31E3],
-  [0x31F0, 0x321E],
-  [0x3220, 0x3247],
-  [0x3250, 0x4DBF],
-  [0x4E00, 0xA48C],
-  [0xA490, 0xA4C6],
-  [0xA960, 0xA97C],
-  [0xAC00, 0xD7A3],
-  [0xE000, 0xF8FF],  // private use (BMP)
-  [0xF900, 0xFAFF],
-  [0xFE10, 0xFE19],
-  [0xFE30, 0xFE52],
-  [0xFE54, 0xFE66],
-  [0xFE68, 0xFE6B],
-  [0xFF01, 0xFF60],
-  [0xFFE0, 0xFFE6],
-  [0x16FE0, 0x16FE4],
-  [0x16FF0, 0x16FF1],
-  [0x17000, 0x187F7],
-  [0x18800, 0x18CD5],
-  [0x18D00, 0x18D08],
-  [0x1AFF0, 0x1AFF3],
-  [0x1AFF5, 0x1AFFB],
-  [0x1AFFD, 0x1AFFE],
-  [0x1B000, 0x1B122],
-  [0x1B132, 0x1B132],
-  [0x1B150, 0x1B152],
-  [0x1B155, 0x1B155],
-  [0x1B164, 0x1B167],
-  [0x1B170, 0x1B2FB],
-  [0x1F004, 0x1F004],
-  [0x1F0CF, 0x1F0CF],
-  [0x1F18E, 0x1F18E],
-  [0x1F191, 0x1F19A],
-  [0x1F200, 0x1F202],
-  [0x1F210, 0x1F23B],
-  [0x1F240, 0x1F248],
-  [0x1F250, 0x1F251],
-  [0x1F260, 0x1F265],
-  [0x1F300, 0x1F9FF],
-  [0x1FA70, 0x1FAFF],
-  [0x20000, 0x2FFFD],
-  [0x30000, 0x3FFFD],
-  [0xF0000, 0xFFFFD],   // private use (plane 15)
-  [0x100000, 0x10FFFD], // private use (plane 16)
-];
+describe('STATUSLINE_ICON_CELLS=1 lays out for a one-cell terminal', () => {
+  // Ghostty advances a Nerd Font icon one cell and has no setting for it, so
+  // the layout has to reserve one instead of two. Measure the output the way
+  // that terminal would: visualWidth is the two-cell model, so take a cell
+  // back for every private use code point in the line.
+  const isPrivateUse = (cp) => PRIVATE_USE_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi);
+  const narrowWidth = (line) =>
+    visualWidth(line) - [...line].filter((ch) => isPrivateUse(ch.codePointAt(0))).length;
 
-function visualWidth(str) {
-  let w = 0;
-  for (const ch of str) {
-    const code = ch.codePointAt(0);
-    let wide = false;
-    for (const [lo, hi] of WIDE_RANGES) {
-      if (code < lo) break;
-      if (code <= hi) { wide = true; break; }
-    }
-    w += wide ? 2 : 1;
+  const data = {
+    cwd: '/home/u/projects/a-fairly-long-project-directory',
+    model: { display_name: 'Opus 5 (1M context)' },
+    context_window: { used_percentage: 30 },
+    session_name: 'a-session-name-long-enough-to-use-the-room',
+    rate_limits: { five_hour: { used_percentage: 20 }, seven_day: { used_percentage: 44 } },
+  };
+
+  const render = (cols, narrow) => {
+    const env = { ...process.env, COLUMNS: String(cols) };
+    if (narrow) env.STATUSLINE_ICON_CELLS = '1';
+    else delete env.STATUSLINE_ICON_CELLS;
+    const result = runWithArgs(data, [], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    assert.equal(result.exitCode, 0);
+    return stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
+  };
+
+  for (const cols of [MIN_SUPPORTED_COLS, 80, 120]) {
+    it(`fits COLUMNS=${cols} measured one cell per icon`, () => {
+      const lines = render(cols, true);
+      assert.ok(lines.length >= 2, 'should print both lines');
+      for (const [i, line] of lines.entries()) {
+        const w = narrowWidth(line);
+        assert.ok(w <= cols, `line ${i + 1} is ${w} cells, over ${cols}: ${line}`);
+      }
+    });
   }
-  return w;
-}
+
+  it('gives the text the cells the icons no longer take', () => {
+    // Without this the suite would pass on output that ignored the setting,
+    // since a two-cell layout measured one cell per icon also fits.
+    const cols = 80;
+    const wide = render(cols, false);
+    const narrow = render(cols, true);
+    assert.notDeepEqual(narrow, wide, 'STATUSLINE_ICON_CELLS=1 changed nothing');
+    for (const [i, line] of narrow.entries()) {
+      assert.ok([...line].length > [...wide[i]].length,
+        `line ${i + 1} should hold more characters: ${line}`);
+    }
+  });
+});
 
 describe('rendered lines fit the terminal', () => {
   // Every cwd here is outside a git repo. Pointing one at this checkout would
@@ -851,9 +819,9 @@ describe('rendered lines fit the terminal', () => {
   ];
 
   for (const [label, data] of inputs) {
-    // These inputs have no git segment, so line 1's tail is short and the
-    // columns never reach their floor — measured at 36 and 37 cells from 40
-    // columns up. This is a smoke test across widths, not floor coverage.
+    // These inputs have no git segment, so line 1's tail is short. This is a
+    // smoke test that both lines fit at several widths, not a check of the
+    // column floors — the MIN_SUPPORTED_COLS tests below cover those.
     for (const cols of [55, 80, 100, 120]) {
       it(`${label} fits COLUMNS=${cols}`, () => {
         const result = runWithArgs(data, [], {

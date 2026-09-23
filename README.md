@@ -22,11 +22,12 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 
 ## Requirements
 
-- A terminal that advances [Nerd Font](https://www.nerdfonts.com/) icons **two cells**, and a font that draws them that wide, such as [Cica](https://github.com/miiton/Cica). The width arithmetic assumes two. The advance is the terminal's call, not the font's — the font only decides whether the glyph fits the space it is given. With a one-cell advance the glyph spills over the next cell, which hides the space after each icon and makes the columns look cramped.
+- A terminal that advances [Nerd Font](https://www.nerdfonts.com/) icons **two cells**, and a font that draws them that wide, such as [Cica](https://github.com/miiton/Cica). That is what the width arithmetic assumes by default. The advance is the terminal's call, not the font's — the font only decides whether the glyph fits the space it is given. With a one-cell advance the glyph spills over the next cell, which hides the space after each icon and makes the columns look cramped. On a terminal that cannot be told to advance two, set `STATUSLINE_ICON_CELLS=1` and the layout reserves one instead.
 
   Check a terminal in one line. The escapes spell U+F07C, the folder icon, in
-  octal so that any POSIX shell prints it. The first `|` lands under the third
-  one when icons take two cells, and under the second one when they take one:
+  octal so that any POSIX shell prints it. The `|` on the first line stands in
+  the same column as the one on the third line when icons take two cells, and
+  as the one on the second line when they take one:
 
   ```sh
   printf '\357\201\274|\nA|\nAA|\n'
@@ -40,7 +41,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
   |---|---|
   | [WezTerm](https://wezterm.org/config/lua/config/cell_widths.html) | `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. The option is marked "Since: Nightly Builds Only", so on a build without it the icons stay one cell — run the check above before believing the config took. Measured on `20260812-070121-fe3006ae`: reloading the config moves a font change into tabs that are already open but not a `cell_widths` change, so open a new tab |
   | Windows Terminal | `"compatibility.ambiguousWidth": "wide"`, a **global** setting rather than a per-profile one ([schema](https://github.com/microsoft/terminal/blob/main/doc/cascadia/profiles.schema.json), under `Globals`). It widens every East Asian Ambiguous code point rather than the private use area alone |
-  | [Ghostty](https://ghostty.org/docs/config/reference) | Nothing to set: it has no option for the advance, and `adjust-icon-height` only changes how the glyph is drawn. Icons stay one cell, so drop the three entries marked `private use` from `WIDE_RANGES` in `index.js` instead |
+  | [Ghostty](https://ghostty.org/docs/config/reference) | Nothing can be set: it has no option for the advance, and `adjust-icon-height` only changes how the glyph is drawn. Icons stay one cell, so set `STATUSLINE_ICON_CELLS=1` instead |
 - Node.js >= 18
 
 ## Setup
@@ -146,6 +147,7 @@ Comments are cached at `~/.claude/cache/statusline-comment-<repo-hash>.json` (5 
 | `STATUSLINE_COMMENT_TTL_MS` | `300000` (5 min) | Comment cache TTL |
 | `STATUSLINE_COMMENT_HISTORY_SIZE` | `5` | Previous comments tracked for dedup |
 | `STATUSLINE_THEME` | `default` | Color theme: `default`, `light`, `minimal`, `dracula` |
+| `STATUSLINE_ICON_CELLS` | `2` | Set to `1` for a terminal that advances Nerd Font icons one cell (see Requirements). Any other value keeps two |
 
 ## Themes
 
