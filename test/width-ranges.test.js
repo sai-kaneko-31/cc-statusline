@@ -1,37 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { execFileSync } = require('child_process');
-// The suite measures the default two-cell table; widthsUnder() spawns a second
-// process for the other setting. Drop an inherited value so lib/widths.js is
-// required here in its default form.
-delete process.env.STATUSLINE_ICON_CELLS;
-const {
-  ICON_CELLS, ICONS, PRIVATE_USE_RANGES, WIDE_RANGES, visualWidth,
-} = require('../lib/widths');
-
-const WIDTHS = require.resolve('../lib/widths');
-
-// lib/widths.js reads STATUSLINE_ICON_CELLS once, when it is required, so the
-// other setting has to be measured in a second process.
-function widthsUnder(cells) {
-  const script = `
-    const w = require(process.argv[1]);
-    console.log(JSON.stringify({
-      cells: w.ICON_CELLS,
-      ranges: w.WIDE_RANGES,
-      folder: w.visualWidth(w.ICONS.FOLDER),
-      cjkCompat: w.visualWidth('\\uF900'),
-      japanese: w.visualWidth('\\u3042'),
-    }));
-  `;
-  const env = { ...process.env };
-  if (cells === null) delete env.STATUSLINE_ICON_CELLS;
-  else env.STATUSLINE_ICON_CELLS = cells;
-  const out = execFileSync(process.execPath, ['-e', script, WIDTHS], {
-    env, encoding: 'utf8', timeout: 10000,
-  });
-  return JSON.parse(out);
-}
+const { ICONS, WIDE_RANGES, visualWidth } = require('../lib/widths');
 
 describe('icon width', () => {
   it('every icon the layout draws is the same two cells', () => {
@@ -43,6 +12,20 @@ describe('icon width', () => {
       .filter(([, ch]) => visualWidth(ch) !== 2)
       .map(([name, ch]) => `${name} (U+${ch.codePointAt(0).toString(16).toUpperCase()}) = ${visualWidth(ch)}`);
     assert.deepEqual(wrong, [], `these icons are not two cells: ${wrong.join(', ')}`);
+  });
+
+  it('every icon is an emoji that needs no terminal setting', () => {
+    // Unicode makes every Emoji_Presentation code point East Asian Wide except
+    // the 26 regional indicators, which are Neutral and pair up into flags. The
+    // rest are what terminals and Claude Code's renderer both count two cells,
+    // which is what the arithmetic reserves. The check above cannot catch a
+    // wrong pick: the emoji blocks in WIDE_RANGES also hold Neutral code points
+    // such as U+1F3F7, which measure two here and are drawn one.
+    const off = Object.entries(ICONS)
+      .filter(([, ch]) => !/^(?!\p{Regional_Indicator})\p{Emoji_Presentation}$/u.test(ch))
+      .map(([name, ch]) => `${name} (U+${ch.codePointAt(0).toString(16).toUpperCase()})`);
+    assert.deepEqual(off, [],
+      `these icons are not a wide Emoji_Presentation code point: ${off.join(', ')}`);
   });
 
   it('each icon is a single code point', () => {
@@ -74,16 +57,16 @@ describe('icon width', () => {
     }
   });
 
-  it('the private use ranges are entries of the table they filter', () => {
-    // PRIVATE_USE_RANGES names the entries STATUSLINE_ICON_CELLS removes. If
-    // one of them stopped matching an entry in the table, the filter would
-    // quietly drop nothing and a one-cell terminal would keep the two-cell
-    // arithmetic. Measured with the default, where the table still has them.
-    assert.equal(ICON_CELLS, 2, 'run this suite without STATUSLINE_ICON_CELLS');
-    const missing = PRIVATE_USE_RANGES.filter(
-      ([lo, hi]) => !WIDE_RANGES.some(([l, h]) => l === lo && h === hi)
-    ).map(([lo, hi]) => `[0x${lo.toString(16)}, 0x${hi.toString(16)}]`);
-    assert.deepEqual(missing, [], `not in WIDE_RANGES: ${missing.join(', ')}`);
+  it('private use code points measure one cell', () => {
+    // Unicode calls the private use areas Ambiguous, and Claude Code's renderer
+    // places them in one cell. A branch or session name holding one is reserved
+    // the cell Claude Code gives it. U+F900 sits next to the BMP private use
+    // area but is East Asian Wide, so it stays two.
+    for (const cp of [0xE000, 0xF07C, 0xF8FF, 0xF0000, 0xFFFFD, 0x100000, 0x10FFFD]) {
+      assert.equal(visualWidth(String.fromCodePoint(cp)), 1,
+        `U+${cp.toString(16).toUpperCase()} should measure one cell`);
+    }
+    assert.equal(visualWidth('\uF900'), 2, 'U+F900 is East Asian Wide');
   });
 
   it('the ranges stay sorted by their low end', () => {
@@ -95,38 +78,6 @@ describe('icon width', () => {
       const [lo] = WIDE_RANGES[i];
       assert.ok(lo > prevHi,
         `[0x${lo.toString(16)}, ...] follows [0x${prevLo.toString(16)}, 0x${prevHi.toString(16)}]`);
-    }
-  });
-});
-
-describe('STATUSLINE_ICON_CELLS', () => {
-  it('defaults to two cells', () => {
-    assert.equal(ICON_CELLS, 2);
-    assert.equal(widthsUnder(null).cells, 2);
-  });
-
-  it('set to 1, it drops the private use ranges and nothing else', () => {
-    const two = widthsUnder(null);
-    const one = widthsUnder('1');
-    assert.equal(one.cells, 1);
-    assert.equal(one.folder, 1, 'an icon should measure one cell');
-    // The CJK compatibility block sits next to the BMP private use area but is
-    // East Asian Wide, and Japanese text is wide in every terminal. Neither
-    // depends on how the terminal advances an icon.
-    assert.equal(one.cjkCompat, 2, 'U+F900 is East Asian Wide, not private use');
-    assert.equal(one.japanese, 2, 'U+3042 is East Asian Wide, not private use');
-    const dropped = two.ranges.filter(
-      ([lo]) => !one.ranges.some(([lo2]) => lo2 === lo)
-    );
-    assert.deepEqual(dropped, PRIVATE_USE_RANGES,
-      'exactly the private use ranges should go');
-  });
-
-  it('any other value leaves the icons at two cells', () => {
-    // The layout is built for two, so only the documented opt-in narrows it.
-    for (const value of ['', '0', '2', 'true', 'yes']) {
-      assert.equal(widthsUnder(value).folder, 2,
-        `STATUSLINE_ICON_CELLS=${JSON.stringify(value)} should not narrow the icons`);
     }
   });
 });

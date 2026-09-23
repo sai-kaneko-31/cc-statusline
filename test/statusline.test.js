@@ -4,11 +4,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// The suite measures the default two-cell layout, and the one-cell block below
-// sets STATUSLINE_ICON_CELLS per render. Drop an inherited one so the results
-// do not depend on the shell the tests were started from.
-delete process.env.STATUSLINE_ICON_CELLS;
-const { ICONS, PRIVATE_USE_RANGES, visualWidth } = require('../lib/widths');
+const { ICONS, visualWidth } = require('../lib/widths');
 
 const INDEX = path.join(__dirname, '..', 'index.js');
 const REPO_CWD = path.join(__dirname, '..');
@@ -72,28 +68,28 @@ describe('statusline', () => {
     assert.ok(plain.includes('Opus 4.6'), 'should include model name');
   });
 
-  it('Opus model shows microchip icon', () => {
+  it('Opus model shows the Opus icon', () => {
     const result = run({
       cwd: '/tmp',
       model: { display_name: 'Opus 4.6' },
     });
-    assert.ok(result.stdout.includes('\uF2DB'), 'should include microchip icon');
+    assert.ok(result.stdout.includes(ICONS.OPUS), 'should include the Opus icon');
   });
 
-  it('Sonnet model shows star icon', () => {
+  it('Sonnet model shows the Sonnet icon', () => {
     const result = run({
       cwd: '/tmp',
       model: { display_name: 'Sonnet 4.6' },
     });
-    assert.ok(result.stdout.includes('\uF005'), 'should include star icon');
+    assert.ok(result.stdout.includes(ICONS.SONNET), 'should include the Sonnet icon');
   });
 
-  it('Haiku model shows coffee icon', () => {
+  it('Haiku model shows the Haiku icon', () => {
     const result = run({
       cwd: '/tmp',
       model: { display_name: 'Haiku 4.5' },
     });
-    assert.ok(result.stdout.includes('\uF0F4'), 'should include coffee icon');
+    assert.ok(result.stdout.includes(ICONS.HAIKU), 'should include the Haiku icon');
   });
 
   it('shows HP bar with correct remaining percentage', () => {
@@ -237,7 +233,7 @@ describe('statusline', () => {
       cwd: path.join(__dirname, '..'),
       model: { display_name: 'Opus 4.6' },
     });
-    assert.ok(result.stdout.includes('\uF126'), 'should include branch icon');
+    assert.ok(result.stdout.includes(ICONS.BRANCH), 'should include branch icon');
   });
 });
 
@@ -310,7 +306,7 @@ describe('colleague comments', () => {
       assert.equal(lines.length, 3, 'should output 3 lines with cached comment');
       const plain = stripAnsi(result.stdout);
       assert.ok(plain.includes('テストコメント'), 'should include cached comment text');
-      assert.ok(result.stdout.includes('\uF075'), 'should include comment icon');
+      assert.ok(result.stdout.includes(ICONS.COMMENT), 'should include comment icon');
     } finally {
       cleanCommentCache();
     }
@@ -369,8 +365,10 @@ describe('colleague comments', () => {
     const lines = result.stdout.split('\n');
     assert.equal(lines.length, 3, 'should still emit a comment line');
     const commentLine = stripAnsi(lines[2]);
-    // Strip the leading icon (one code point) and the space after it.
-    const body = commentLine.replace(/^[^\s]\s/, '');
+    // Strip the leading icon (one code point) and the space after it. The
+    // icon lies outside the BMP, so the pattern needs the u flag to match it
+    // whole rather than half of its surrogate pair.
+    const body = commentLine.replace(/^[^\s]\s/u, '');
     return { commentLine, body };
   }
 
@@ -378,9 +376,7 @@ describe('colleague comments', () => {
   // minus the icon and the space after it. index.js measures ICONS.FOLDER for
   // that prefix and floors the result at 20, so a narrow terminal still shows
   // a comment. Both halves are read rather than written out, so a test that
-  // passes a different COLUMNS is measured against that terminal. Every render
-  // in this block runs at the default two cells; the one-cell layout is covered
-  // by its own block, which does not draw a comment line.
+  // passes a different COLUMNS is measured against that terminal.
   const ICON_PREFIX = visualWidth(ICONS.FOLDER) + 1;
   const commentBudget = (columns) => Math.max(20, Number(columns) - ICON_PREFIX);
   const COMMENT_BUDGET = commentBudget(40);
@@ -585,7 +581,7 @@ describe('rate limits', () => {
     const plain = stripAnsi(result.stdout);
     assert.ok(!plain.includes('5h'), 'should not show a 5-hour window');
     assert.ok(!plain.includes('7d'), 'should not show a 7-day window');
-    assert.ok(!result.stdout.includes('\uF0E4'), 'should not show the meter icon');
+    assert.ok(!result.stdout.includes(ICONS.METER), 'should not show the meter icon');
   });
 
   it('omits a window whose used_percentage is missing', () => {
@@ -717,21 +713,21 @@ describe('worktree and session name', () => {
     const plain = stripAnsi(result.stdout);
     assert.ok(plain.includes('fix-login'), 'should show the worktree name');
     assert.ok(!plain.includes('.claude/worktrees'), 'should not show the worktree path');
-    assert.ok(result.stdout.includes('\uF1E0'), 'should show the worktree icon');
-    assert.ok(!result.stdout.includes('\uF07C'), 'should not show the folder icon');
+    assert.ok(result.stdout.includes(ICONS.WORKTREE), 'should show the worktree icon');
+    assert.ok(!result.stdout.includes(ICONS.FOLDER), 'should not show the folder icon');
   });
 
   it('path and folder icon stay when worktree is absent', () => {
     const result = runWide(base);
-    assert.ok(result.stdout.includes('\uF07C'), 'should show the folder icon');
-    assert.ok(!result.stdout.includes('\uF1E0'), 'should not show the worktree icon');
+    assert.ok(result.stdout.includes(ICONS.FOLDER), 'should show the folder icon');
+    assert.ok(!result.stdout.includes(ICONS.WORKTREE), 'should not show the worktree icon');
   });
 
   it('session_name is appended to line 1', () => {
     const result = runWide({ ...base, session_name: 'secrets-migration' });
     const line1 = stripAnsi(result.stdout).split('\n')[0];
     assert.ok(line1.includes('secrets-migration'), 'should show the session name on line 1');
-    assert.ok(result.stdout.includes('\uF0C5'), 'should show the session icon');
+    assert.ok(result.stdout.includes(ICONS.SESSION), 'should show the session icon');
   });
 
   it('session_name is dropped when the terminal is too narrow', () => {
@@ -742,7 +738,7 @@ describe('worktree and session name', () => {
     });
     const plain = stripAnsi(result.stdout);
     assert.ok(!plain.includes('secrets-mi'), 'should drop the name rather than overflow');
-    assert.ok(!result.stdout.includes('\uF0C5'), 'should not show the session icon');
+    assert.ok(!result.stdout.includes(ICONS.SESSION), 'should not show the session icon');
   });
 
   it('outside a git repo the name keeps the room the branch would have taken', () => {
@@ -759,7 +755,7 @@ describe('worktree and session name', () => {
 
   it('no session icon when session_name is absent', () => {
     const result = runWide(base);
-    assert.ok(!result.stdout.includes('\uF0C5'), 'should not show the session icon');
+    assert.ok(!result.stdout.includes(ICONS.SESSION), 'should not show the session icon');
   });
 });
 
@@ -773,57 +769,6 @@ describe('worktree and session name', () => {
 // 33-char branch only pushes the columns down onto their floor; it does not
 // move this number.
 const MIN_SUPPORTED_COLS = 61;
-
-describe('STATUSLINE_ICON_CELLS=1 lays out for a one-cell terminal', () => {
-  // Ghostty advances a Nerd Font icon one cell and has no setting for it, so
-  // the layout has to reserve one instead of two. Measure the output the way
-  // that terminal would: visualWidth is the two-cell model, so take a cell
-  // back for every private use code point in the line.
-  const isPrivateUse = (cp) => PRIVATE_USE_RANGES.some(([lo, hi]) => cp >= lo && cp <= hi);
-  const narrowWidth = (line) =>
-    visualWidth(line) - [...line].filter((ch) => isPrivateUse(ch.codePointAt(0))).length;
-
-  const data = {
-    cwd: '/home/u/projects/a-fairly-long-project-directory',
-    model: { display_name: 'Opus 5 (1M context)' },
-    context_window: { used_percentage: 30 },
-    session_name: 'a-session-name-long-enough-to-use-the-room',
-    rate_limits: { five_hour: { used_percentage: 20 }, seven_day: { used_percentage: 44 } },
-  };
-
-  const render = (cols, narrow) => {
-    const env = { ...process.env, COLUMNS: String(cols) };
-    if (narrow) env.STATUSLINE_ICON_CELLS = '1';
-    else delete env.STATUSLINE_ICON_CELLS;
-    const result = runWithArgs(data, [], { env, stdio: ['pipe', 'pipe', 'pipe'] });
-    assert.equal(result.exitCode, 0);
-    return stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
-  };
-
-  for (const cols of [MIN_SUPPORTED_COLS, 80, 120]) {
-    it(`fits COLUMNS=${cols} measured one cell per icon`, () => {
-      const lines = render(cols, true);
-      assert.ok(lines.length >= 2, 'should print both lines');
-      for (const [i, line] of lines.entries()) {
-        const w = narrowWidth(line);
-        assert.ok(w <= cols, `line ${i + 1} is ${w} cells, over ${cols}: ${line}`);
-      }
-    });
-  }
-
-  it('gives the text the cells the icons no longer take', () => {
-    // Without this the suite would pass on output that ignored the setting,
-    // since a two-cell layout measured one cell per icon also fits.
-    const cols = 80;
-    const wide = render(cols, false);
-    const narrow = render(cols, true);
-    assert.notDeepEqual(narrow, wide, 'STATUSLINE_ICON_CELLS=1 changed nothing');
-    for (const [i, line] of narrow.entries()) {
-      assert.ok([...line].length > [...wide[i]].length,
-        `line ${i + 1} should hold more characters: ${line}`);
-    }
-  });
-});
 
 describe('rendered lines fit the terminal', () => {
   // Every cwd here is outside a git repo. Pointing one at this checkout would

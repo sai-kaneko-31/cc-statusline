@@ -358,8 +358,7 @@ const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
 // content — ahead/behind and diff stats on line 1, rate limits on line 2 —
 // so the columns are sized against whichever line needs more room.
 // An icon plus its trailing space, and the same preceded by a column gap.
-// Measured rather than written as a number, so both follow lib/widths.js —
-// including when STATUSLINE_ICON_CELLS narrows the icons to one cell.
+// Measured rather than written as a number, so both follow lib/widths.js.
 const ICON_SEG = visualWidth(ICONS.FOLDER) + 1;
 const GAP_ICON_SEG = visualWidth(COL_SEP) + ICON_SEG;
 

@@ -1,17 +1,17 @@
 # cc-statusline
 
-A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline command with Nerd Font icons, a context window bar, and rate limit usage.
+A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline command with emoji icons, a context window bar, and rate limit usage.
 
 ```
-📂 ~/git/my-project  🔀 feature/auth     🚀 ↑2 +15/-3   📄 add OAuth callback
-🔲 Opus 5 (high)     ❤️ [████████░░]53%  📊 5h 32% 7d 68%
+📂 ~/git/my-project  🌿 feature/auth     🚀 ↑2 +15/-3   📝 add OAuth callback
+🎼 Opus 5 (high)     💗 [████████░░]53%  📊 5h 32% 7d 68%
 ```
 
 ## Features
 
 | Feature | Description |
 |---------|-------------|
-| Nerd Font icons | Model-specific icons (Opus ``, Sonnet ``, Haiku ``) |
+| Emoji icons | Model-specific icons (Opus 🎼, Sonnet 📜, Haiku 🍃); no special font or terminal setting |
 | Context window bar | Context window remaining until auto-compact (85%), color-coded |
 | Rate limit usage | 5-hour and 7-day window usage, from `rate_limits`; dropped on a narrow terminal |
 | Git stats | Branch, ahead/behind, insertions/deletions |
@@ -21,27 +21,13 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 
 ## Requirements
 
-- A terminal that advances [Nerd Font](https://www.nerdfonts.com/) icons **two cells**, and a font whose icon glyphs fit inside two, such as [Cica](https://github.com/miiton/Cica). That is what the width arithmetic assumes by default. The advance is the terminal's call, not the font's — the font only decides whether the glyph fits the space it is given. Measured on U+F07C, Cica draws 1.57 cells of ink and Bizin Gothic NF draws 2.10, so Bizin spills into the next cell at either advance, which hides the space after each icon and makes the columns look cramped. On a terminal that cannot be told to advance two, set `STATUSLINE_ICON_CELLS=1` and the layout reserves one instead.
-
-  Check a terminal in one line. The escapes spell U+F07C, the folder icon, in
-  octal so that any POSIX shell prints it. The `|` on the first line stands in
-  the same column as the one on the third line when icons take two cells, and
-  as the one on the second line when they take one:
-
-  ```sh
-  printf '\357\201\274|\nA|\nAA|\n'
-  ```
-
-  What to set, as of September 2026. Each terminal's own documentation is the
-  current answer; the line above is how you confirm it on the machine in front
-  of you.
-
-  | Terminal | What to set |
-  |---|---|
-  | [WezTerm](https://wezterm.org/config/lua/config/cell_widths.html) | `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. The option is marked "Since: Nightly Builds Only", so on a build without it the icons stay one cell — run the check above before believing the config took. Measured on `20260812-070121-fe3006ae`: reloading the config moves a font change into tabs that are already open but not a `cell_widths` change, so open a new tab |
-  | Windows Terminal | Nothing to set, and **do not** set `"compatibility.ambiguousWidth": "wide"` ([schema](https://github.com/microsoft/terminal/blob/main/doc/cascadia/profiles.schema.json), under `Globals`). It widens every East Asian Ambiguous code point rather than the private use area alone, and the layout counts the other Ambiguous ones — the bar's `█`, the ahead/behind arrows, the truncation ellipsis — as one cell. A full bar then draws ten cells wider than the arithmetic reserved. Use `STATUSLINE_ICON_CELLS=1` instead |
-  | [Ghostty](https://ghostty.org/docs/config/reference) | Nothing can be set: it has no option for the advance, and `adjust-icon-height` only changes how the glyph is drawn. Icons stay one cell, so set `STATUSLINE_ICON_CELLS=1` instead |
+- A terminal and font that draw emoji. Every icon is an `Emoji_Presentation` code point other than a regional indicator, which Unicode makes East Asian Wide, so terminals give it two cells without any setting, and Claude Code's own renderer counts it two as well.
+- Leave the East Asian Ambiguous class at one cell: do not set, for example, Windows Terminal's `"compatibility.ambiguousWidth": "wide"` ([schema](https://github.com/microsoft/terminal/blob/main/doc/cascadia/profiles.schema.json), under `Globals`). The layout counts the Ambiguous code points it draws — the bar's `█`, the ahead/behind arrows, the truncation ellipsis — as one cell, so a full bar would draw ten cells wider than the arithmetic reserved.
 - Node.js >= 18
+
+### Why not Nerd Font icons
+
+The icons were Nerd Font glyphs until September 2026. They sit in the private use area, which Unicode calls Ambiguous, and Claude Code places Ambiguous code points in one cell: 2.1.280 measures text with `Bun.stringWidth` and its cell segmenter, both given `ambiguousIsNarrow: true`, with no setting to change it. Widening them to two in the terminal (WezTerm's `cell_widths`) put the terminal out of step with Claude Code's cell grid. Observed on WezTerm `20260812-070121-fe3006ae` with `"tui": "fullscreen"`: selecting the status line with the mouse shifted it sideways, and `Ctrl+L` redrew it. [anthropics/claude-code#67456](https://github.com/anthropics/claude-code/issues/67456) reports the same drift for plane 15 glyphs; it was closed as NOT_PLANNED after going inactive. Leaving them at one cell lets a glyph wider than a cell spill over the space after it — measured on U+F07C, Cica draws 1.57 cells of ink and Bizin Gothic NF 2.10. Emoji are two cells in both places, so neither happens. A `cell_widths` entry added for the old icons is no longer needed, and `STATUSLINE_ICON_CELLS` is no longer read.
 
 ## Setup
 
@@ -92,7 +78,7 @@ Every segment past the branch is optional and simply absent when Claude Code doe
 
 `rate_limits.five_hour` and `rate_limits.seven_day` render as `5h <n>% 7d <n>%`. Claude Code sends them to claude.ai Pro and Max subscribers after the first API response, and drops each window once its `resets_at` passes, so either half can be missing.
 
-On a terminal too narrow to hold the columns and the whole tail, line 2 drops the rate limits, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge on a narrow terminal. The width at which it stops overflowing is everything line 1 spends outside its two columns — the three icons with their trailing spaces, the two column gaps, and the tail — plus the 30 cells the two columns may shrink to together. A short cwd and branch never reach that floor and fit below these widths. It moves with the digits in the tail: 13 + 18 + 30 = 61 columns for `↑12↓34` and `+1234/-5678`, and 65 for `↑123↓456` and `+12345/-67890`. Those are the two-cell numbers; with `STATUSLINE_ICON_CELLS=1` the icons and gaps cost 10 instead of 13, so the first becomes 58. `MIN_SUPPORTED_COLS` in the tests spells the arithmetic out, including the space the diff stats carry in front of them.
+On a terminal too narrow to hold the columns and the whole tail, line 2 drops the rate limits, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge on a narrow terminal. The width at which it stops overflowing is everything line 1 spends outside its two columns — the three icons with their trailing spaces, the two column gaps, and the tail — plus the 30 cells the two columns may shrink to together. A short cwd and branch never reach that floor and fit below these widths. It moves with the digits in the tail: 13 + 18 + 30 = 61 columns for `↑12↓34` and `+1234/-5678`, and 65 for `↑123↓456` and `+12345/-67890`. `MIN_SUPPORTED_COLS` in the tests spells the arithmetic out, including the space the diff stats carry in front of them.
 
 ### Context window bar color
 
@@ -142,7 +128,6 @@ Comments are cached at `~/.claude/cache/statusline-comment-<repo-hash>.json` (5 
 | `STATUSLINE_COMMENT_TTL_MS` | `300000` (5 min) | Comment cache TTL |
 | `STATUSLINE_COMMENT_HISTORY_SIZE` | `5` | Previous comments tracked for dedup |
 | `STATUSLINE_THEME` | `default` | Color theme: `default`, `light`, `minimal`, `dracula` |
-| `STATUSLINE_ICON_CELLS` | `2` | Set to `1` for a terminal that advances Nerd Font icons one cell (see Requirements). Any other value keeps two |
 
 ## Themes
 
