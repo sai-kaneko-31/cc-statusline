@@ -22,7 +22,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 
 ## Requirements
 
-- A terminal that advances [Nerd Font](https://www.nerdfonts.com/) icons **two cells**, and a font that draws them that wide, such as [Cica](https://github.com/miiton/Cica). That is what the width arithmetic assumes by default. The advance is the terminal's call, not the font's — the font only decides whether the glyph fits the space it is given. With a one-cell advance the glyph spills over the next cell, which hides the space after each icon and makes the columns look cramped. On a terminal that cannot be told to advance two, set `STATUSLINE_ICON_CELLS=1` and the layout reserves one instead.
+- A terminal that advances [Nerd Font](https://www.nerdfonts.com/) icons **two cells**, and a font whose icon glyphs fit inside two, such as [Cica](https://github.com/miiton/Cica). That is what the width arithmetic assumes by default. The advance is the terminal's call, not the font's — the font only decides whether the glyph fits the space it is given. Measured on U+F07C, Cica draws 1.57 cells of ink and Bizin Gothic NF draws 2.10, so Bizin spills into the next cell at either advance, which hides the space after each icon and makes the columns look cramped. On a terminal that cannot be told to advance two, set `STATUSLINE_ICON_CELLS=1` and the layout reserves one instead.
 
   Check a terminal in one line. The escapes spell U+F07C, the folder icon, in
   octal so that any POSIX shell prints it. The `|` on the first line stands in
@@ -40,7 +40,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
   | Terminal | What to set |
   |---|---|
   | [WezTerm](https://wezterm.org/config/lua/config/cell_widths.html) | `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. The option is marked "Since: Nightly Builds Only", so on a build without it the icons stay one cell — run the check above before believing the config took. Measured on `20260812-070121-fe3006ae`: reloading the config moves a font change into tabs that are already open but not a `cell_widths` change, so open a new tab |
-  | Windows Terminal | `"compatibility.ambiguousWidth": "wide"`, a **global** setting rather than a per-profile one ([schema](https://github.com/microsoft/terminal/blob/main/doc/cascadia/profiles.schema.json), under `Globals`). It widens every East Asian Ambiguous code point rather than the private use area alone |
+  | Windows Terminal | Nothing to set, and **do not** set `"compatibility.ambiguousWidth": "wide"` ([schema](https://github.com/microsoft/terminal/blob/main/doc/cascadia/profiles.schema.json), under `Globals`). It widens every East Asian Ambiguous code point rather than the private use area alone, and the layout counts the other Ambiguous ones — the bar's `█`, the ahead/behind arrows, the truncation ellipsis — as one cell. A full bar then draws ten cells wider than the arithmetic reserved. Use `STATUSLINE_ICON_CELLS=1` instead |
   | [Ghostty](https://ghostty.org/docs/config/reference) | Nothing can be set: it has no option for the advance, and `adjust-icon-height` only changes how the glyph is drawn. Icons stay one cell, so set `STATUSLINE_ICON_CELLS=1` instead |
 - Node.js >= 18
 
@@ -93,7 +93,7 @@ Every segment past the branch is optional and simply absent when Claude Code doe
 
 `rate_limits.five_hour` and `rate_limits.seven_day` render as `5h <n>% 7d <n>%`. Claude Code sends them to claude.ai Pro and Max subscribers after the first API response, and drops each window once its `resets_at` passes, so either half can be missing.
 
-On a terminal too narrow to hold the columns and the whole tail, line 2 drops the rate limits first and then the cache icon, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge on a narrow terminal. The floor is line 1's tail plus the columns' own floor, which means it moves with the digits in the tail: 61 columns for `↑12↓34` and `+1234/-5678`, 65 for `↑123↓456` and `+12345/-67890`. `MIN_SUPPORTED_COLS` in the tests spells the arithmetic out, including the space the diff stats carry in front of them.
+On a terminal too narrow to hold the columns and the whole tail, line 2 drops the rate limits first and then the cache icon, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge on a narrow terminal. The floor is everything line 1 spends outside its two columns — the three icons with their trailing spaces, the two column gaps, and the tail — plus the columns' own floor of 30. It moves with the digits in the tail: 13 + 18 + 30 = 61 columns for `↑12↓34` and `+1234/-5678`, and 65 for `↑123↓456` and `+12345/-67890`. `MIN_SUPPORTED_COLS` in the tests spells the arithmetic out, including the space the diff stats carry in front of them.
 
 ### Prompt cache warmth
 

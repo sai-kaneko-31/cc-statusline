@@ -4,6 +4,10 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+// The suite measures the default two-cell layout, and the one-cell block below
+// sets STATUSLINE_ICON_CELLS per render. Drop an inherited one so the results
+// do not depend on the shell the tests were started from.
+delete process.env.STATUSLINE_ICON_CELLS;
 const { ICONS, PRIVATE_USE_RANGES, visualWidth } = require('../lib/widths');
 
 const INDEX = path.join(__dirname, '..', 'index.js');
@@ -352,8 +356,8 @@ describe('colleague comments', () => {
   // a comment. Both halves are read rather than written out: a test that
   // passes a different COLUMNS, and a run with STATUSLINE_ICON_CELLS=1, are
   // then measured against what index.js itself used.
-  const commentBudget = (columns) =>
-    Math.max(20, Number(columns) - (visualWidth(ICONS.FOLDER) + 1));
+  const ICON_PREFIX = visualWidth(ICONS.FOLDER) + 1;
+  const commentBudget = (columns) => Math.max(20, Number(columns) - ICON_PREFIX);
   const COMMENT_BUDGET = commentBudget(40);
 
   it('long Japanese comment is truncated at visual-cell budget with ellipsis', () => {
@@ -443,7 +447,7 @@ describe('colleague comments', () => {
         // Only the widths where the floor is not in play are held to fitting,
         // so lowering the floor later stays a free choice rather than a
         // failing test.
-        const floorWins = budget > Number(columns) - 3;
+        const floorWins = budget > Number(columns) - ICON_PREFIX;
         if (!floorWins) {
           assert.ok(vw(commentLine) <= Number(columns),
             `comment line is ${vw(commentLine)} cells at COLUMNS=${columns}: ${commentLine}`);

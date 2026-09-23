@@ -1,6 +1,10 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('child_process');
+// The suite measures the default two-cell table; widthsUnder() spawns a second
+// process for the other setting. Drop an inherited value so lib/widths.js is
+// required here in its default form.
+delete process.env.STATUSLINE_ICON_CELLS;
 const {
   ICON_CELLS, ICONS, PRIVATE_USE_RANGES, WIDE_RANGES, visualWidth,
 } = require('../lib/widths');
@@ -49,6 +53,25 @@ describe('icon width', () => {
       .filter(([, ch]) => [...ch].length !== 1)
       .map(([name, ch]) => `${name} (${[...ch].length} code points: ${JSON.stringify(ch)})`);
     assert.deepEqual(multi, [], `these icons are not one code point: ${multi.join(', ')}`);
+  });
+
+  it('only the private use areas are widened out of the Ambiguous class', () => {
+    // The layout draws several East Asian Ambiguous code points besides the
+    // icons, and reserves one cell for each. A terminal told to widen the whole
+    // Ambiguous class draws them two cells wide and the lines run past the
+    // edge, which is why README's Requirements tells Windows Terminal users not
+    // to set that. Pin the premise that warning rests on.
+    const narrow = {
+      '\u2588': 'the context bar\u2019s filled cell',
+      '\u2591': 'the context bar\u2019s empty cell',
+      '\u2191': 'the ahead arrow',
+      '\u2193': 'the behind arrow',
+      '\u2026': 'the truncation ellipsis',
+    };
+    for (const [ch, what] of Object.entries(narrow)) {
+      assert.equal(visualWidth(ch), 1,
+        `${what} (U+${ch.codePointAt(0).toString(16).toUpperCase()}) must stay one cell`);
+    }
   });
 
   it('the private use ranges are entries of the table they filter', () => {
