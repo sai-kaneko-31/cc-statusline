@@ -295,12 +295,10 @@ function padEnd(str, width) {
 //
 // The private use planes are listed whole rather than the ranges a font happens
 // to fill, so that adding icons never needs an edit here. Planes 15 and 16 are
-// private use end to end, so widening them catches nothing standard. WezTerm's
-// cell_widths takes arbitrary ranges, so this is a choice rather than something
-// the terminal imposes. Fonts do reach plane 15: Cica v5.0.3 carries 2283
-// glyphs across U+F2500-U+FFD46, which its patcher copied up from the BMP by
-// adding 0xF0000, and Nerd Fonts moved Material Design Icons into the same
-// plane from U+F0001 in v2.3.0. Plane 16 holds nothing today.
+// private use end to end, so widening them catches nothing standard. Fonts do
+// reach plane 15: Cica v5.0.3 carries 2283 glyphs across U+F2500-U+FFD46, its
+// patcher having copied them up from the BMP by adding 0xF0000. Plane 16 holds
+// nothing today.
 const WIDE_RANGES = [
   [0x1100, 0x115F],
   [0x231A, 0x231B],

@@ -30,13 +30,15 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
   printf '\uf07c|\nA|\nAA|\n'
   ```
 
-  What each terminal can do, read from its own source and schema in September 2026:
+  What to set, as of September 2026. Each terminal's own documentation is the
+  current answer; the line above is how you confirm it on the machine in front
+  of you.
 
-  | Terminal | Two-cell icons |
+  | Terminal | What to set |
   |---|---|
-  | WezTerm | `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. The [option](https://wezterm.org/config/lua/config/cell_widths.html) is marked "Since: Nightly Builds Only" and the newest stable release is `20240203-110809-5046fc22` (February 2024), so a stable build rejects the key. Measured on `20260812-070121-fe3006ae`: reloading the config moves a font change into tabs that are already open but not a `cell_widths` change, so open a new tab |
-  | Windows Terminal | `"compatibility.ambiguousWidth": "wide"` widens every East Asian Ambiguous code point rather than the private use area alone, so it moves the rest of the text as well |
-  | Ghostty | No setting for it. `codepointWidth` reads a table built from Unicode's own widths, where the private use areas are Ambiguous, and the test beside it pins plane 16 at one cell. `adjust-icon-height` changes how the glyph is drawn, not how far the cursor moves |
+  | [WezTerm](https://wezterm.org/config/lua/config/cell_widths.html) | `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. Nightly builds only, and a new tab is needed for a change to take effect |
+  | [Windows Terminal](https://learn.microsoft.com/en-us/windows/terminal/customize-settings/profile-advanced) | `"compatibility.ambiguousWidth": "wide"`, which widens every East Asian Ambiguous code point rather than the private use area alone |
+  | [Ghostty](https://ghostty.org/docs/config/reference) | Nothing to set: it has no option for this, and its icons stay one cell |
 - Node.js >= 18
 
 ## Setup
