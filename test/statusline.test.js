@@ -11,9 +11,6 @@ delete process.env.STATUSLINE_ICON_CELLS;
 const { ICONS, PRIVATE_USE_RANGES, visualWidth } = require('../lib/widths');
 
 const INDEX = path.join(__dirname, '..', 'index.js');
-const CACHE_DIR = path.join(os.homedir(), '.claude', 'cache');
-// /tmp is not a git repo, so cacheKey falls back to 'default'
-const COMMENT_CACHE = path.join(CACHE_DIR, 'statusline-comment-default.json');
 const REPO_CWD = path.join(__dirname, '..');
 
 const hasClaudeAuth = (() => {
@@ -51,10 +48,6 @@ function runWithArgs(input, args = [], options = {}) {
   } catch (err) {
     return { stdout: err.stdout || '', exitCode: err.status };
   }
-}
-
-function cleanCommentCache() {
-  try { fs.rmSync(COMMENT_CACHE, { force: true }); } catch {}
 }
 
 // Strip ANSI escape codes and OSC8 hyperlink sequences
@@ -255,9 +248,40 @@ describe('colleague comments', () => {
     context_window: { used_percentage: 30 },
   };
 
+  // index.js keeps the comment under $HOME and, when the cache is missing or
+  // stale, spawns a detached --generate-comment that writes it once claude
+  // answers — seconds after the test that triggered it has finished. Sharing
+  // the real home let that write land on the fixture a later test had just
+  // put there, and the suite failed on a different test about one run in
+  // several. Give this block its own home and a claude that answers with
+  // nothing, so no write is in flight and running the tests bills no claude -p.
+  let homeDir;
+  let commentCache;
+  let colleagueEnv;
+
+  before(() => {
+    homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccsl-colleague-'));
+    const binDir = path.join(homeDir, 'bin');
+    fs.mkdirSync(binDir, { recursive: true });
+    const stub = path.join(binDir, 'claude');
+    fs.writeFileSync(stub, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(stub, 0o755);
+    // /tmp is not a git repo, so index.js falls back to the 'default' cache key.
+    commentCache = path.join(homeDir, '.claude', 'cache', 'statusline-comment-default.json');
+    colleagueEnv = { ...process.env, HOME: homeDir, PATH: `${binDir}:${process.env.PATH}` };
+  });
+
+  after(() => {
+    fs.rmSync(homeDir, { recursive: true, force: true });
+  });
+
+  const cleanCommentCache = () => {
+    try { fs.rmSync(commentCache, { force: true }); } catch {}
+  };
+
   it('--generate-comment calls claude CLI and exits cleanly', { skip: !hasClaudeAuth && 'claude CLI not installed or not authenticated', timeout: 30000 }, () => {
     const ctx = JSON.stringify({ branch: 'main', changedFiles: [], time: '2026/01/01 00:00:00', hpRemaining: 55, instruction: 'test', cacheKey: 'test' });
-    const env = { ...process.env };
+    const env = { ...process.env, HOME: homeDir };
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE_ENTRYPOINT;
     delete env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS;
@@ -267,7 +291,7 @@ describe('colleague comments', () => {
 
   it('--colleague-instruction without cached comment outputs 2 lines', () => {
     cleanCommentCache();
-    const result = runWithArgs(stdinData, ['--colleague-instruction', 'test persona']);
+    const result = runWithArgs(stdinData, ['--colleague-instruction', 'test persona'], { env: colleagueEnv });
     assert.equal(result.exitCode, 0);
     const lines = result.stdout.split('\n');
     assert.equal(lines.length, 2, 'should output 2 lines when no cache exists');
@@ -276,11 +300,11 @@ describe('colleague comments', () => {
   it('--colleague-instruction with pre-created cache outputs 3 lines with comment', () => {
     cleanCommentCache();
     try {
-      const cacheDir = path.dirname(COMMENT_CACHE);
+      const cacheDir = path.dirname(commentCache);
       fs.mkdirSync(cacheDir, { recursive: true });
-      fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment: 'テストコメント' }));
+      fs.writeFileSync(commentCache, JSON.stringify({ comment: 'テストコメント' }));
 
-      const result = runWithArgs(stdinData, ['--colleague-instruction', 'test persona']);
+      const result = runWithArgs(stdinData, ['--colleague-instruction', 'test persona'], { env: colleagueEnv });
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 3, 'should output 3 lines with cached comment');
@@ -295,11 +319,11 @@ describe('colleague comments', () => {
   it('without --colleague-instruction always outputs 2 lines even if cache exists', () => {
     cleanCommentCache();
     try {
-      const cacheDir = path.dirname(COMMENT_CACHE);
+      const cacheDir = path.dirname(commentCache);
       fs.mkdirSync(cacheDir, { recursive: true });
-      fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment: 'テストコメント' }));
+      fs.writeFileSync(commentCache, JSON.stringify({ comment: 'テストコメント' }));
 
-      const result = run(stdinData);
+      const result = runWithArgs(stdinData, [], { env: colleagueEnv });
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 2, 'should output 2 lines without --colleague-instruction');
@@ -311,14 +335,14 @@ describe('colleague comments', () => {
   it('stale cache does not show comment', () => {
     cleanCommentCache();
     try {
-      const cacheDir = path.dirname(COMMENT_CACHE);
+      const cacheDir = path.dirname(commentCache);
       fs.mkdirSync(cacheDir, { recursive: true });
-      fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment: '古いコメント' }));
+      fs.writeFileSync(commentCache, JSON.stringify({ comment: '古いコメント' }));
       // Set mtime to 10 minutes ago
       const past = new Date(Date.now() - 600000);
-      fs.utimesSync(COMMENT_CACHE, past, past);
+      fs.utimesSync(commentCache, past, past);
 
-      const result = runWithArgs(stdinData, ['--colleague-instruction', 'test']);
+      const result = runWithArgs(stdinData, ['--colleague-instruction', 'test'], { env: colleagueEnv });
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 2, 'should output 2 lines when cache is stale');
@@ -336,10 +360,10 @@ describe('colleague comments', () => {
   // Render a cached comment under COLUMNS=40 and return the comment-line body
   // (after the icon + space prefix) along with the full stripped line.
   function renderCachedComment(comment, columns = '40') {
-    fs.mkdirSync(path.dirname(COMMENT_CACHE), { recursive: true });
-    fs.writeFileSync(COMMENT_CACHE, JSON.stringify({ comment }));
+    fs.mkdirSync(path.dirname(commentCache), { recursive: true });
+    fs.writeFileSync(commentCache, JSON.stringify({ comment }));
     const result = runWithArgs(stdinData, ['--colleague-instruction', 'test'], {
-      env: { ...process.env, COLUMNS: columns },
+      env: { ...colleagueEnv, COLUMNS: columns },
     });
     assert.equal(result.exitCode, 0);
     const lines = result.stdout.split('\n');
@@ -353,9 +377,10 @@ describe('colleague comments', () => {
   // The comment line is "<icon><space><body>", so the body gets the terminal
   // minus the icon and the space after it. index.js measures ICONS.FOLDER for
   // that prefix and floors the result at 20, so a narrow terminal still shows
-  // a comment. Both halves are read rather than written out: a test that
-  // passes a different COLUMNS, and a run with STATUSLINE_ICON_CELLS=1, are
-  // then measured against what index.js itself used.
+  // a comment. Both halves are read rather than written out, so a test that
+  // passes a different COLUMNS is measured against that terminal. Every render
+  // in this block runs at the default two cells; the one-cell layout is covered
+  // by its own block, which does not draw a comment line.
   const ICON_PREFIX = visualWidth(ICONS.FOLDER) + 1;
   const commentBudget = (columns) => Math.max(20, Number(columns) - ICON_PREFIX);
   const COMMENT_BUDGET = commentBudget(40);

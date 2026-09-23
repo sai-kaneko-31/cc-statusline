@@ -1,10 +1,10 @@
 # cc-statusline
 
-Claude Code statusline command (single-file Node.js CLI).
+Claude Code statusline command (Node.js CLI, zero dependencies).
 
 ## Architecture
 
-- Entry point: `index.js` (~430 lines, zero dependencies)
+- Entry point: `index.js`; `lib/widths.js` holds the icons, the two-cell ranges and `visualWidth`. Copying `index.js` on its own leaves it unable to resolve that require
 - Reads JSON from stdin, outputs ANSI-colored 2-line status to stdout
 - Two modes: statusline (default) and `--generate-comment` (background LLM comment generation)
 - Modules: child_process, fs, path, os, crypto (all Node.js built-in)
@@ -82,7 +82,8 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - `lib/widths.js` holds the icons, `WIDE_RANGES` and `visualWidth`; `index.js` and both test files require it rather than keeping copies. The tests used to read `index.js` as text to enumerate the icons, and the regex let a differently spelled declaration through three times running, so the set is an object the tests iterate instead
 - `WIDE_RANGES` takes its East Asian Wide / Fullwidth ranges from a generator over unicodedata; the emoji blocks and the private use areas are added on top by hand, so regenerating from unicodedata alone drops them. `visualWidth` stops at the first range above the code point, so the list stays sorted by its low end and a test checks that
 - Nerd Font icons live in the private use area, which Unicode calls Ambiguous, so the terminal's width table decides how far the cursor moves. The font only decides whether the glyph's ink fits the cells it is given. Measured in September 2026 with fontTools, taking the cell as the font's own ASCII advance: for U+F07C, Bizin Gothic NF draws 2.10 cells of ink (`glyf` bounding box 2147/1024) behind a one-cell advance (`hmtx` 1024), so it spills over the next cell, which is what made the columns look cramped; Cica draws 1.57 cells (805/512) behind a two-cell advance (1024). The two numbers come from different tables — `hmtx` carries the advance, `glyf` the ink — and the spill differs per icon (Bizin's U+F126 is 1.14 cells). README's Requirements carries what to set per terminal and a one-line check; keep third-party behaviour there and dated, not spread through the code, because nothing in this repository re-verifies it
-- Only the private use areas are pulled out of the Ambiguous class. The bar's `█` (U+2588), the ahead/behind arrows (U+2191/2193) and the truncation ellipsis (U+2026) are Ambiguous too and are counted as one cell, so a terminal setting that widens the whole class makes the lines longer than the arithmetic reserved — measured at ten cells over on a full bar. That rules out Windows Terminal's `compatibility.ambiguousWidth`, which has no per-range form; `test/width-ranges.test.js` pins those five code points at one cell
+- The Ambiguous code points the layout draws itself are left at one cell: the bar's `█` (U+2588) and `░` (U+2591), the ahead/behind arrows (U+2191/2193) and the truncation ellipsis (U+2026). A terminal setting that widens the whole Ambiguous class draws them two, and the lines run longer than the arithmetic reserved — measured at ten cells over on a full bar. That rules out Windows Terminal's `compatibility.ambiguousWidth`, which has no per-range form; `test/width-ranges.test.js` pins those five code points at one cell
+- `WIDE_RANGES` is not limited to Wide and the private use areas. The emoji block `[0x2600, 0x27BF]` spans 46 Wide, 80 Ambiguous and 322 Neutral code points (Unicode 15.0), so repository text holding one of the latter two — `✓` U+2713 is Neutral — is reserved two cells and drawn one. The column pads a cell short and the two lines misalign, which is the opposite direction from running past the edge
 - `ICON_CELLS` in `lib/widths.js` is the one place the two is written. Nothing detects the terminal, so `STATUSLINE_ICON_CELLS=1` is the opt-in for a terminal that advances one cell and cannot be told otherwise (Ghostty). It drops the three private use entries from `WIDE_RANGES`; every other width, including the CJK compatibility block next to the first of them, is unaffected. The layout reads the result through `visualWidth(ICONS.FOLDER)` rather than writing a cell count in each place
 - `--generate-comment` mode: spawned as detached background process, calls `claude -p --model <model> --no-session-persistence` to generate context-aware comments
 - `--colleague-instruction` flag enables the optional 3rd line with LLM-generated colleague comments
