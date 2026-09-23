@@ -289,8 +289,11 @@ function padEnd(str, width) {
 // reaches it with `cell_widths`, Ghostty 1.2.0 and later does it for Nerd Font
 // glyphs on its own, and Cica draws its icons that wide so the glyph fills the
 // space instead of spilling out of it. Against a terminal that advances one
-// cell, drop these ranges. All three planes are listed because the terminal
-// setting covers whole planes and planes 15 and 16 are private use end to end,
+// cell, drop the three entries marked "private use" below — the CJK
+// compatibility block sitting next to the first one is East Asian Wide and
+// comes from unicodedata, so it stays. All three planes are listed because the
+// terminal setting covers whole planes and planes 15 and 16 are private use
+// end to end,
 // so widening them catches nothing standard. Nerd Fonts v3 moved Material
 // Design Icons into plane 15 (U+F0001 and up), where Cica v5.0.3 has 2283
 // glyphs; plane 16 holds none today and is listed to keep the two tables
@@ -324,7 +327,8 @@ const WIDE_RANGES = [
   [0xA490, 0xA4C6],
   [0xA960, 0xA97C],
   [0xAC00, 0xD7A3],
-  [0xE000, 0xFAFF],
+  [0xE000, 0xF8FF],  // private use (BMP)
+  [0xF900, 0xFAFF],
   [0xFE10, 0xFE19],
   [0xFE30, 0xFE52],
   [0xFE54, 0xFE66],
@@ -358,8 +362,8 @@ const WIDE_RANGES = [
   [0x1FA70, 0x1FAFF],
   [0x20000, 0x2FFFD],
   [0x30000, 0x3FFFD],
-  [0xF0000, 0xFFFFD],
-  [0x100000, 0x10FFFD],
+  [0xF0000, 0xFFFFD],   // private use (plane 15)
+  [0x100000, 0x10FFFD], // private use (plane 16)
 ];
 
 // Visual display width: a wide code point counts as 2 cells, the rest as 1.

@@ -56,9 +56,21 @@ describe('icon width', () => {
     // only while the whole set is in WIDE_RANGES, so check the set rather than
     // the one icon the arithmetic happens to read.
     const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
-    const icons = [...src.matchAll(/const (ICON_[A-Z_]+) = '\\u([0-9A-Fa-f]+)'/g)]
-      .map(([, name, hex]) => [name, parseInt(hex, 16)]);
-    assert.ok(icons.length >= 13, `expected the icon constants, got ${icons.length}`);
+    // Read every ICON_ declaration, then resolve each one's code point. Counting
+    // only the ones written as '\uXXXX' would let an icon added as '\u{F0001}'
+    // or as a literal glyph slip past the check while the count still looked
+    // plausible, which is the hole this test exists to close.
+    const declarations = [...src.matchAll(/^const (ICON_[A-Z_]+) = '((?:\\.|[^'\\])*)'/gm)];
+    assert.ok(declarations.length >= 13,
+      `expected the icon constants, got ${declarations.length}`);
+    const icons = declarations.map(([, name, literal]) => {
+      const escaped = literal.match(/^\\u\{?([0-9A-Fa-f]+)\}?$/);
+      if (escaped) return [name, parseInt(escaped[1], 16)];
+      const points = [...literal];
+      assert.equal(points.length, 1,
+        `${name} is not a single code point, so its width cannot be checked: ${literal}`);
+      return [name, points[0].codePointAt(0)];
+    });
     const ranges = rangesOf('../index.js').map((r) => r.split('-').map(Number));
     const outside = icons
       .filter(([, cp]) => !ranges.some(([lo, hi]) => cp >= lo && cp <= hi))

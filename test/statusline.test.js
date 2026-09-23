@@ -345,10 +345,13 @@ describe('colleague comments', () => {
     return { commentLine, body };
   }
 
-  // The comment line is "<icon><space><body>". The icon takes two cells
-  // (see WIDE_RANGES) and the space one, against the COLUMNS=40 that
-  // renderCachedComment above passes in.
-  const COMMENT_BUDGET = 40 - 3;
+  // The comment line is "<icon><space><body>", so the body gets the terminal
+  // minus the icon's two cells (see WIDE_RANGES) and the space after it.
+  // index.js floors it at 20 so a narrow terminal still shows a comment.
+  // Derived from the argument rather than written out, so a test that passes a
+  // different COLUMNS is measured against that terminal and not against 40.
+  const commentBudget = (columns) => Math.max(20, Number(columns) - 3);
+  const COMMENT_BUDGET = commentBudget(40);
 
   it('long Japanese comment is truncated at visual-cell budget with ellipsis', () => {
     cleanCommentCache();
@@ -414,6 +417,38 @@ describe('colleague comments', () => {
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
       assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
         `emoji truncated body width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
+    } finally {
+      cleanCommentCache();
+    }
+  });
+
+  it('the comment line is measured against the terminal it is drawn in', () => {
+    // Every other test in this block runs at COLUMNS=40 and looks only at the
+    // body, so the width of the line itself has never been compared with the
+    // terminal. 140 is above the floor and 20 is below it, which puts both
+    // sides of the Math.max in the check.
+    cleanCommentCache();
+    try {
+      for (const columns of [String(MIN_SUPPORTED_COLS), '140', '20']) {
+        const longComment = 'あ'.repeat(120);
+        const { commentLine, body } = renderCachedComment(longComment, columns);
+        const budget = commentBudget(columns);
+        assert.ok(vw(body) >= budget - 1 && vw(body) <= budget,
+          `body is ${vw(body)} cells against a budget of ${budget} at COLUMNS=${columns}`);
+        // Below the floor the body keeps its 20 cells and the line runs past
+        // the edge, the same call line 1's tail makes: a comment cut to a stub
+        // is worth less than a wrapped line. Above the floor the line fits.
+        const fits = vw(commentLine) <= Number(columns);
+        const floorWins = budget > Number(columns) - 3;
+        if (!floorWins) {
+          assert.ok(fits,
+            `comment line is ${vw(commentLine)} cells at COLUMNS=${columns}: ${commentLine}`);
+        } else {
+          assert.ok(!fits,
+            `the floor should be what pushes the line past COLUMNS=${columns}, but it fit: ${commentLine}`);
+        }
+        cleanCommentCache();
+      }
     } finally {
       cleanCommentCache();
     }
@@ -647,12 +682,15 @@ describe('worktree and session name', () => {
   });
 });
 
-// Narrowest terminal the layout fits in, for the tail these fixtures use:
-// line1Outside is 31 cells (three two-cell icons with their gaps, ↑12↓34 and
-// +1234/-5678) and COLS_FLOOR is 30, so below 61 the two reserve more cells
-// than the terminal has. A tail with more digits raises it — ↑123↓456 with
-// +12345/-67890 needs 65. The 33-char branch only pushes the columns down onto
-// their floor; it does not move this number.
+// Narrowest terminal the layout fits in, for the tail these fixtures use.
+// line1Outside is 31 cells: 3 for the dir icon and its space, 5 each for the
+// branch and rocket icons with the column gap in front of them, 6 for ↑12↓34,
+// and 12 for the diff stats — which carry their own leading space, so the
+// string measured is ' +1234/-5678'. COLS_FLOOR is 30, so below 61 the two
+// reserve more cells than the terminal has. A tail with more digits raises it:
+// ↑123↓456 with ' +12345/-67890' makes line1Outside 35 and the floor 65. The
+// 33-char branch only pushes the columns down onto their floor; it does not
+// move this number.
 const MIN_SUPPORTED_COLS = 61;
 
 // Visual cell width. WIDE_RANGES is copied from index.js and must stay
@@ -688,7 +726,8 @@ const WIDE_RANGES = [
   [0xA490, 0xA4C6],
   [0xA960, 0xA97C],
   [0xAC00, 0xD7A3],
-  [0xE000, 0xFAFF],
+  [0xE000, 0xF8FF],  // private use (BMP)
+  [0xF900, 0xFAFF],
   [0xFE10, 0xFE19],
   [0xFE30, 0xFE52],
   [0xFE54, 0xFE66],
@@ -722,8 +761,8 @@ const WIDE_RANGES = [
   [0x1FA70, 0x1FAFF],
   [0x20000, 0x2FFFD],
   [0x30000, 0x3FFFD],
-  [0xF0000, 0xFFFFD],
-  [0x100000, 0x10FFFD],
+  [0xF0000, 0xFFFFD],   // private use (plane 15)
+  [0x100000, 0x10FFFD], // private use (plane 16)
 ];
 
 function visualWidth(str) {
