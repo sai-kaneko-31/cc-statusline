@@ -23,7 +23,8 @@ echo '{"cwd":"/tmp","model":{"display_name":"Opus 4.6"},"context_window":{"used_
 # Test inside a git repo (shows branch info)
 echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_window\":{\"used_percentage\":70}}" | node index.js
 
-# Test rate limits, prompt cache and session name (all optional in stdin)
+# Test rate limits and session name (all optional in stdin). prompt_cache is
+# read but not drawn, so it changes nothing here.
 echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 5\"},\"effort\":{\"level\":\"high\"},\"session_name\":\"my task\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":32},\"seven_day\":{\"used_percentage\":68}},\"prompt_cache\":{\"warm\":true}}" | node index.js
 
 # Test with colleague comment (requires cached comment)
@@ -58,7 +59,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 | `worktree.name` | string | No | Worktree name; replaces the path in col1. Present only in a Claude Code worktree session, not for `git worktree add` |
 | `rate_limits.five_hour.used_percentage` | number | No | 5-hour window usage (0-100). claude.ai Pro/Max only, after the first API response; dropped once `resets_at` passes |
 | `rate_limits.seven_day.used_percentage` | number | No | 7-day window usage (0-100); same availability as `five_hour`, and independently absent |
-| `prompt_cache.warm` | boolean | No | Whether the prompt cache is within its TTL; drives the fire/snowflake icon. Absent until the first API response |
+| `prompt_cache.warm` | boolean | No | Whether the prompt cache is within its TTL. Not drawn; it only reaches the colleague comment's prompt as a pressure signal. Absent until the first API response |
 
 `pr.*` is still sent by Claude Code but deliberately unused (see Key Implementation Details).
 
@@ -67,7 +68,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - `pr.*` is not displayed: the OSC8 link it justified never worked in a real terminal ([anthropics/claude-code#26356](https://github.com/anthropics/claude-code/issues/26356), closed NOT_PLANNED), and the number and review state were not worth the width. A test asserts the segment stays gone
 - Context window bar converts used_percentage to "remaining until 85% (auto-compact threshold)"
 - Rate limit usage replaces the clock in col3 of line 2; each window is independently optional, so `windowPct` returns null for anything non-numeric
-- Prompt cache warmth sits next to the context bar; `warm` must be a boolean, since a nullable field would otherwise render as cold
+- Prompt cache warmth is not drawn. There is nothing to do about a cold cache, and an unlabelled icon beside the bar could not be read for what it meant. `prompt_cache.warm` is still parsed because the colleague comment names a cold cache among the pressure signals it may mention. Two tests pin that: one drives `--generate-comment` directly, the other runs the status line from stdin and waits for the background generation, so neither half of the path can be deleted without a failure
 - Worktree name replaces the path (with a different icon) because a Claude Code worktree session has an uninformative cwd under `.claude/worktrees/`
 - Session name closes line 1 and is dropped when it would push the line past the terminal edge; line 1 has the slack because column widths are sized for the wider line 2
 - All git commands have `timeout: 3000ms`
@@ -92,7 +93,7 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 - Terminal width detection: `process.stderr.columns` → `COLUMNS` env → default 100
 - Width arithmetic is in terminal cells throughout (`visualWidth`): column widths, truncation (`truncStrVisual`) and padding (`padEnd`). Mixing in `.length` puts a wide-char segment past its column and the line past the terminal edge
 - Column widths are sized against whichever line spends more outside them. Both tails vary (ahead/behind + diff stats on line 1, rate limits on line 2), so a constant cannot stand in for that
-- On a terminal too narrow for the columns' floor plus the tail, line 2 drops rate limits and then the cache icon. Line 1's tail is not optional, so a long branch with large diff stats still overflows on a narrow terminal. `COLS_FLOOR` is how far the two columns may shrink together, so `line1Outside + COLS_FLOOR` is the width at which a line whose columns are already at that floor stops overflowing: 31 + 30 = 61 for `↑12↓34 +1234/-5678`, where the diff stats count the space in front of them, and 65 for `↑123↓456 +12345/-67890` (`MIN_SUPPORTED_COLS` in the tests carries the breakdown). A short cwd and branch do not reach the floor and fit well below those widths
+- On a terminal too narrow for the columns' floor plus the tail, line 2 drops the rate limits. Line 1's tail is not optional, so a long branch with large diff stats still overflows on a narrow terminal. `COLS_FLOOR` is how far the two columns may shrink together, so `line1Outside + COLS_FLOOR` is the width at which a line whose columns are already at that floor stops overflowing: 31 + 30 = 61 for `↑12↓34 +1234/-5678`, where the diff stats count the space in front of them, and 65 for `↑123↓456 +12345/-67890` (`MIN_SUPPORTED_COLS` in the tests carries the breakdown). A short cwd and branch do not reach the floor and fit well below those widths
 - Free text from the repository (commit subjects, file names, branch and worktree names) is flattened, stripped of quotes and backslashes, and capped before it enters the `claude -p` prompt; the prompt also states that the context is data
 - Model display_name parenthetical suffix (e.g. "(1M context)") auto-stripped
 

@@ -602,6 +602,10 @@ describe('rate limits', () => {
 });
 
 describe('prompt cache warmth', () => {
+  // The fire/snowflake icon was dropped: there is nothing to do about a cold
+  // cache, and an unlabelled icon next to the bar could not be read. The field
+  // is still parsed, because the colleague comment names a cold cache as one
+  // of the pressure signals it may mention.
   function stdinWith(promptCache) {
     const data = {
       cwd: '/tmp',
@@ -612,32 +616,79 @@ describe('prompt cache warmth', () => {
     return data;
   }
 
-  it('warm cache shows the fire icon', () => {
-    const result = run(stdinWith({ warm: true, hit_ratio: 0.9 }));
-    assert.equal(result.exitCode, 0);
-    assert.ok(result.stdout.includes('\uF06D'), 'should show the fire icon');
-    assert.ok(!result.stdout.includes('\uF2DC'), 'should not show the snowflake icon');
+  it('renders the same line whether the cache is warm or cold', () => {
+    const warm = run(stdinWith({ warm: true, hit_ratio: 0.9 }));
+    const cold = run(stdinWith({ warm: false }));
+    const absent = run(stdinWith(null));
+    assert.equal(warm.exitCode, 0);
+    assert.equal(stripAnsi(warm.stdout), stripAnsi(cold.stdout),
+      'warm and cold must draw the same line');
+    assert.equal(stripAnsi(warm.stdout), stripAnsi(absent.stdout),
+      'the field must not change the line at all');
   });
 
-  it('cold cache shows the snowflake icon', () => {
-    const result = run(stdinWith({ warm: false }));
-    assert.ok(result.stdout.includes('\uF2DC'), 'should show the snowflake icon');
-    assert.ok(!result.stdout.includes('\uF06D'), 'should not show the fire icon');
+  // A stub claude that records the prompt it was handed. The caller removes
+  // the directory; wrapping it in a try/finally here would delete it before an
+  // async body had run.
+  //
+  // PATH carries the stub and the interpreters index.js needs, and nothing
+  // else. The generation runs detached, so it can look `claude` up after the
+  // caller has removed the stub; a PATH that still held the developer's own bin
+  // directory would find the real CLI there and bill a `claude -p`.
+  function makeClaudeStub() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccsl-cache-'));
+    const stub = path.join(dir, 'claude');
+    fs.writeFileSync(stub, `#!/bin/sh\nprintf '%s' "$2" > "${dir}/prompt.txt"\nprintf ok\n`);
+    fs.chmodSync(stub, 0o755);
+    const PATH = [dir, path.dirname(process.execPath), '/usr/bin', '/bin'].join(':');
+    return { dir, env: { ...process.env, PATH, HOME: dir } };
+  }
+
+  it('--generate-comment names a cold cache in the prompt', () => {
+    const { dir, env } = makeClaudeStub();
+    try {
+      const promptFor = (cacheWarm) => {
+        execFileSync(process.execPath, [INDEX, '--generate-comment', JSON.stringify({
+          branch: 'main', instruction: 'Be brief.', cacheKey: 'cache-test',
+          previousComments: [], cacheWarm,
+        })], { env, encoding: 'utf8', timeout: 10000 });
+        return fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8');
+      };
+      assert.ok(promptFor(false).includes('prompt_cache=cold'),
+        'a cold cache should be named in the prompt');
+      assert.ok(!promptFor(true).includes('prompt_cache'),
+        'a warm cache is not a pressure signal, so it should not be named');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
-  it('omits the icon when prompt_cache is absent', () => {
-    const result = run(stdinWith(null));
-    assert.ok(!result.stdout.includes('\uF06D'), 'should not show the fire icon');
-    assert.ok(!result.stdout.includes('\uF2DC'), 'should not show the snowflake icon');
-  });
-
-  it('omits the icon when warm is not a boolean', () => {
-    // null is the shape that matters: a nullable field reads as "present" to
-    // a `!== undefined` check, and would then render as cold.
-    for (const warm of [null, 'true', 1]) {
-      const result = run(stdinWith({ warm, hit_ratio: 0.5 }));
-      assert.ok(!result.stdout.includes('\uF06D'), `should not show the fire icon for warm=${JSON.stringify(warm)}`);
-      assert.ok(!result.stdout.includes('\uF2DC'), `should not show the snowflake icon for warm=${JSON.stringify(warm)}`);
+  it('stdin prompt_cache.warm reaches that prompt', async () => {
+    // The whole reason index.js still reads the field. The test above starts
+    // from the context object, so on its own it left the half that builds it
+    // unchecked — replacing the parse with `null` kept the suite green. This
+    // drives it from stdin, through the detached generation index.js spawns.
+    const { dir, env } = makeClaudeStub();
+    try {
+      const result = runWithArgs(stdinWith({ warm: false }),
+        ['--colleague-instruction', 'Be brief.'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+      assert.equal(result.exitCode, 0);
+      // Wait on the cache file rather than prompt.txt: index.js writes it once
+      // the stub has returned, so seeing it means the generation is past its
+      // lookup of `claude` and the directory can be removed. prompt.txt appears
+      // while the stub is still running.
+      const cacheDir = path.join(dir, '.claude', 'cache');
+      const cached = () => (fs.existsSync(cacheDir) ? fs.readdirSync(cacheDir) : [])
+        .some((name) => name.startsWith('statusline-comment-'));
+      const deadline = Date.now() + 15000;
+      while (!cached() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.ok(cached(), 'index.js should have spawned the background generation');
+      assert.ok(fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8').includes('prompt_cache=cold'),
+        'a cold cache from stdin should reach the prompt');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 });
@@ -789,7 +840,6 @@ describe('rendered lines fit the terminal', () => {
         five_hour: { used_percentage: 100 },
         seven_day: { used_percentage: 100 },
       },
-      prompt_cache: { warm: true },
     }],
     ['long worktree name', {
       cwd: '/home/u/.claude/worktrees/a-long-worktree-name',
@@ -797,7 +847,6 @@ describe('rendered lines fit the terminal', () => {
       worktree: { name: 'a-long-worktree-name-that-keeps-going' },
       context_window: { used_percentage: 5 },
       rate_limits: { seven_day: { used_percentage: 7 } },
-      prompt_cache: { warm: false },
     }],
     ['Japanese session name', {
       cwd: '/home/u/projects/another-directory',
@@ -815,7 +864,6 @@ describe('rendered lines fit the terminal', () => {
       context_window: { used_percentage: 30 },
       worktree: { name: '日本語のワークツリーの名前がとても長い場合' },
       session_name: 'session-name',
-      prompt_cache: { warm: true },
     }],
     ['Japanese cwd and session name', {
       cwd: '/home/u/プロジェクト/サブディレクトリ/さらに深いところ',
@@ -843,7 +891,6 @@ describe('rendered lines fit the terminal', () => {
       context_window: { used_percentage: 30 },
       session_name: 'no-branch-here-but-a-long-name',
       rate_limits: { five_hour: { used_percentage: 3 }, seven_day: { used_percentage: 9 } },
-      prompt_cache: { warm: true },
     }],
   ];
 
@@ -953,7 +1000,6 @@ describe('narrow terminals drop the optional tail', () => {
       five_hour: { used_percentage: 10 },
       seven_day: { used_percentage: 20 },
     },
-    prompt_cache: { warm: true },
   };
 
   function linesAt(cols) {
@@ -968,7 +1014,6 @@ describe('narrow terminals drop the optional tail', () => {
   it('shows the whole tail when there is room', () => {
     const lines = linesAt(100);
     assert.ok(lines[1].includes('5h 10% 7d 20%'), lines[1]);
-    assert.ok(lines.join('').includes(''), 'should show the cache icon');
   });
 
   it('drops rate limits rather than overflow at COLUMNS=50', () => {
@@ -1223,7 +1268,6 @@ describe('line 2 gives up its tail only for its own width', () => {
         five_hour: { used_percentage: 10 },
         seven_day: { used_percentage: 20 },
       },
-      prompt_cache: { warm: true },
     }, [], {
       env: { ...process.env, COLUMNS: String(cols) },
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -1238,10 +1282,6 @@ describe('line 2 gives up its tail only for its own width', () => {
       `line 2 is ${visualWidth(line2)} cells: ${line2}`);
     assert.ok(line2.includes('5h 10% 7d 20%'),
       `line 1's length must not strip line 2's tail: ${line2}`);
-    // The cache icon is dropped by the same rule one step later, so it has to
-    // be checked here too; the rate limits alone leave that step uncovered.
-    assert.ok(result.stdout.includes('\uF06D'),
-      `line 1's length must not strip the cache icon: ${line2}`);
   });
 });
 
