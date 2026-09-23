@@ -55,9 +55,9 @@ describe('icon width', () => {
     assert.deepEqual(multi, [], `these icons are not one code point: ${multi.join(', ')}`);
   });
 
-  it('only the private use areas are widened out of the Ambiguous class', () => {
-    // The layout draws several East Asian Ambiguous code points besides the
-    // icons, and reserves one cell for each. A terminal told to widen the whole
+  it('the Ambiguous code points the layout draws stay one cell', () => {
+    // The layout draws code points besides the icons that a terminal may treat
+    // as Ambiguous, and reserves one cell for each. A terminal told to widen the whole
     // Ambiguous class draws them two cells wide and the lines run past the
     // edge, which is why README's Requirements tells Windows Terminal users not
     // to set that. Pin the premise that warning rests on.
