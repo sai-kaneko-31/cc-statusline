@@ -367,8 +367,9 @@ describe('colleague comments', () => {
     const commentLine = stripAnsi(lines[2]);
     // Strip the leading icon (one code point) and the space after it. The
     // icon lies outside the BMP, so the pattern needs the u flag to match it
-    // whole rather than half of its surrogate pair.
-    const body = commentLine.replace(/^[^\s]\s/u, '');
+    // whole rather than half of its surrogate pair. \S rather than [^\s]:
+    // Node 18 fails to match /^[^\s]\s/u against an emoji and a space.
+    const body = commentLine.replace(/^\S\s/u, '');
     return { commentLine, body };
   }
 
