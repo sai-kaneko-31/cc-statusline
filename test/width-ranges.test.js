@@ -56,14 +56,25 @@ describe('icon width', () => {
     // only while the whole set is in WIDE_RANGES, so check the set rather than
     // the one icon the arithmetic happens to read.
     const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
-    // Read every ICON_ declaration, then resolve each one's code point. Counting
-    // only the ones written as '\uXXXX' would let an icon added as '\u{F0001}'
-    // or as a literal glyph slip past the check while the count still looked
-    // plausible, which is the hole this test exists to close.
-    const declarations = [...src.matchAll(/^const (ICON_[A-Z_]+) = '((?:\\.|[^'\\])*)'/gm)];
-    assert.ok(declarations.length >= 13,
-      `expected the icon constants, got ${declarations.length}`);
-    const icons = declarations.map(([, name, literal]) => {
+    // Read every ICON_ declaration, then resolve each one's code point. A regex
+    // that only matched one spelling would let an icon written another way slip
+    // past while the count still looked plausible, which is the hole this test
+    // exists to close. So take all of them first and account for each one:
+    // anything that is not a quoted literal has to be named here on purpose.
+    const all = [...src.matchAll(/^const (ICON_[A-Z_]+) = (.*)$/gm)];
+    assert.ok(all.length >= 14, `expected the icon constants, got ${all.length}`);
+    const derived = all.filter(([, , value]) => !/^['"`]/.test(value)).map(([, name]) => name);
+    assert.deepEqual(derived, ['ICON_SEG'],
+      `ICON_SEG is a cell count, not an icon. Anything else here is an icon this test cannot read: ${derived.join(', ')}`);
+    const declarations = all
+      .filter(([, , value]) => /^['"`]/.test(value))
+      .map(([, name, value]) => {
+        const quote = value[0];
+        const literal = value.match(new RegExp(`^${quote}((?:\\\\.|[^\\\\${quote}])*)${quote}`));
+        assert.ok(literal, `${name} is not a closed string literal: ${value}`);
+        return [name, literal[1]];
+      });
+    const icons = declarations.map(([name, literal]) => {
       const escaped = literal.match(/^\\u\{?([0-9A-Fa-f]+)\}?$/);
       if (escaped) return [name, parseInt(escaped[1], 16)];
       const points = [...literal];

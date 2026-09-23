@@ -22,11 +22,21 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 
 ## Requirements
 
-- A terminal that advances [Nerd Font](https://www.nerdfonts.com/) icons **two cells**, and a font that draws them that wide, such as [Cica](https://github.com/miiton/Cica). The width arithmetic assumes two. The advance is the terminal's call, not the font's — the font only decides whether the glyph fits the space it is given:
-  - WezTerm: `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. The [documentation](https://wezterm.org/config/lua/config/cell_widths.html) marks this option "Since: Nightly Builds Only" and the newest stable release is `20240203-110809-5046fc22` (February 2024), so a stable build rejects the key and the icons stay one cell. Measured on `20260812-070121-fe3006ae`: reloading the config applies a new font to tabs that are already open but not a new `cell_widths`, so open a new tab to see the change
-  - Ghostty 1.2.0 and later: two cells for Nerd Font glyphs, with no setting to change ([discussion #8822](https://github.com/ghostty-org/ghostty/discussions/8822))
-  - Windows Terminal: `"compatibility.ambiguousWidth": "wide"` is the nearest knob. It widens every East Asian Ambiguous code point rather than the private use area alone, so it moves the rest of the text as well
-  - With a one-cell advance the glyph spills over the next cell, which hides the space after each icon and makes the columns look cramped
+- A terminal that advances [Nerd Font](https://www.nerdfonts.com/) icons **two cells**, and a font that draws them that wide, such as [Cica](https://github.com/miiton/Cica). The width arithmetic assumes two. The advance is the terminal's call, not the font's — the font only decides whether the glyph fits the space it is given. With a one-cell advance the glyph spills over the next cell, which hides the space after each icon and makes the columns look cramped.
+
+  Check a terminal in one line. The first `|` lands under the third one when icons take two cells, and under the second one when they take one:
+
+  ```sh
+  printf '\uf07c|\nA|\nAA|\n'
+  ```
+
+  What each terminal can do, read from its own source and schema in September 2026:
+
+  | Terminal | Two-cell icons |
+  |---|---|
+  | WezTerm | `cell_widths = { { first = 0xe000, last = 0xf8ff, width = 2 }, { first = 0xf0000, last = 0xffffd, width = 2 }, { first = 0x100000, last = 0x10fffd, width = 2 } }`. The [option](https://wezterm.org/config/lua/config/cell_widths.html) is marked "Since: Nightly Builds Only" and the newest stable release is `20240203-110809-5046fc22` (February 2024), so a stable build rejects the key. Measured on `20260812-070121-fe3006ae`: reloading the config moves a font change into tabs that are already open but not a `cell_widths` change, so open a new tab |
+  | Windows Terminal | `"compatibility.ambiguousWidth": "wide"` widens every East Asian Ambiguous code point rather than the private use area alone, so it moves the rest of the text as well |
+  | Ghostty | No setting for it. `codepointWidth` reads a table built from Unicode's own widths, where the private use areas are Ambiguous, and the test beside it pins plane 16 at one cell. `adjust-icon-height` changes how the glyph is drawn, not how far the cursor moves |
 - Node.js >= 18
 
 ## Setup
