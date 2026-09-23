@@ -4,7 +4,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 
 ```
 📂 ~/git/my-project  🔀 feature/auth     🚀 ↑2 +15/-3   📄 add OAuth callback
-🔲 Opus 5 (high)     ❤️ [████████░░]53% 🔥  📊 5h 32% 7d 68%
+🔲 Opus 5 (high)     ❤️ [████████░░]53%  📊 5h 32% 7d 68%
 ```
 
 ## Features
@@ -14,7 +14,6 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 | Nerd Font icons | Model-specific icons (Opus ``, Sonnet ``, Haiku ``) |
 | Context window bar | Context window remaining until auto-compact (85%), color-coded |
 | Rate limit usage | 5-hour and 7-day window usage, from `rate_limits`; dropped first on a narrow terminal |
-| Prompt cache warmth | Fire / snowflake next to the bar, from `prompt_cache.warm` |
 | Git stats | Branch, ahead/behind, insertions/deletions |
 | Worktree and session | Worktree name in place of the path, session name on line 1 |
 | 3-column alignment | Path/model, branch/context window bar, stats/rate limits |
@@ -75,7 +74,7 @@ The statusline re-runs only when Claude Code emits an event (new message, `/comp
 
 ```
 Line 1: 📂 <path>         🔀 <branch>              🚀 <ahead/behind> <+added/-deleted>   📄 <session>
-Line 2: 🔲 <model> (<effort>)  ❤️ [<bar>]<remaining>% <cache>  📊 5h <n>% 7d <n>%
+Line 2: 🔲 <model> (<effort>)  ❤️ [<bar>]<remaining>%  📊 5h <n>% 7d <n>%
          ───col1───        ─────col2─────                ───col3───
 ```
 
@@ -84,7 +83,7 @@ Line 2: 🔲 <model> (<effort>)  ❤️ [<bar>]<remaining>% <cache>  📊 5h <n>
 | Column | Line 1 | Line 2 |
 |--------|--------|--------|
 | col1 | Working directory (`~` substituted), or the worktree name | Model name with icon and effort level |
-| col2 | Branch | Context window bar (remaining %) + cache warmth |
+| col2 | Branch | Context window bar (remaining %) |
 | col3 | Ahead/behind + diff stats, then the session name | Rate limit usage |
 
 Every segment past the branch is optional and simply absent when Claude Code does not send the field. The session name is also dropped when line 1 would otherwise run past the terminal edge.
@@ -93,11 +92,7 @@ Every segment past the branch is optional and simply absent when Claude Code doe
 
 `rate_limits.five_hour` and `rate_limits.seven_day` render as `5h <n>% 7d <n>%`. Claude Code sends them to claude.ai Pro and Max subscribers after the first API response, and drops each window once its `resets_at` passes, so either half can be missing.
 
-On a terminal too narrow to hold the columns and the whole tail, line 2 drops the rate limits first and then the cache icon, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge on a narrow terminal. The width at which it stops overflowing is everything line 1 spends outside its two columns — the three icons with their trailing spaces, the two column gaps, and the tail — plus the 30 cells the two columns may shrink to together. A short cwd and branch never reach that floor and fit below these widths. It moves with the digits in the tail: 13 + 18 + 30 = 61 columns for `↑12↓34` and `+1234/-5678`, and 65 for `↑123↓456` and `+12345/-67890`. Those are the two-cell numbers; with `STATUSLINE_ICON_CELLS=1` the icons and gaps cost 10 instead of 13, so the first becomes 58. `MIN_SUPPORTED_COLS` in the tests spells the arithmetic out, including the space the diff stats carry in front of them.
-
-### Prompt cache warmth
-
-`prompt_cache.warm` renders next to the context bar: `` (fire) while the cache is warm, `` (snowflake) once it goes cold and the next request has to re-send the conversation.
+On a terminal too narrow to hold the columns and the whole tail, line 2 drops the rate limits, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge on a narrow terminal. The width at which it stops overflowing is everything line 1 spends outside its two columns — the three icons with their trailing spaces, the two column gaps, and the tail — plus the 30 cells the two columns may shrink to together. A short cwd and branch never reach that floor and fit below these widths. It moves with the digits in the tail: 13 + 18 + 30 = 61 columns for `↑12↓34` and `+1234/-5678`, and 65 for `↑123↓456` and `+12345/-67890`. Those are the two-cell numbers; with `STATUSLINE_ICON_CELLS=1` the icons and gaps cost 10 instead of 13, so the first becomes 58. `MIN_SUPPORTED_COLS` in the tests spells the arithmetic out, including the space the diff stats carry in front of them.
 
 ### Context window bar color
 

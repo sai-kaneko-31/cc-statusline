@@ -371,22 +371,16 @@ const line1Outside =
 const COLS_FLOOR = 30;
 
 // Line 2's tail is optional, so a terminal too narrow for both the floor and
-// the tail drops segments from the right instead of running past the edge.
-// Rate limits go first: the context bar is what the status line is for.
-let showCache = cacheWarm !== null;
+// the tail drops it instead of running past the edge. The context bar stays:
+// it is what the status line is for.
 let showRate = rateText !== '';
-// The icon the sizing measures has to be the icon the line draws, so both read
-// this one binding.
-const cacheIcon = cacheWarm ? ICONS.CACHE_WARM : ICONS.CACHE_COLD;
 const line2Outside = () =>
   ICON_SEG +                            // model icon + space
   GAP_ICON_SEG +                        // COL_SEP + heart icon + space
-  (showCache ? 1 + visualWidth(cacheIcon) : 0) +       // space + cache icon
   (showRate ? GAP_ICON_SEG + visualWidth(rateText) : 0); // COL_SEP + meter icon + space
 // Only line 2's own width decides what line 2 gives up. Line 1's tail can be
 // the longer of the two, and dropping segments off line 2 does nothing for it.
 if (showRate && termCols - line2Outside() < COLS_FLOOR) showRate = false;
-if (showCache && termCols - line2Outside() < COLS_FLOOR) showCache = false;
 
 const maxContentCols = Math.max(
   COLS_FLOOR,
@@ -484,13 +478,6 @@ if (usedPct != null && usedPct !== '') {
   line2 += `${COL_SEP}${barColor}${ICONS.HEART} [${barFilled}${barEmpty}]${remaining}%${ctxPadding}${RESET}`;
 } else {
   line2 += `${COL_SEP}${T.dim}${ICONS.HEART} ${' '.repeat(col2Len)}${RESET}`;
-}
-
-// Cache warmth sits next to the context bar: both say how much the next
-// request has to re-send.
-if (showCache) {
-  const cacheColor = cacheWarm ? T.barSafe : T.dim;
-  line2 += ` ${cacheColor}${cacheIcon}${RESET}`;
 }
 
 if (showRate) {
