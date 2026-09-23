@@ -169,7 +169,9 @@ const sevenDayPct = windowPct(rateLimits.seven_day);
 // pressure signal, which is why the value travels all the way to contextObj
 // below. A cold cache makes the next request re-send the whole conversation,
 // so it costs more and answers slower. Absent until the main conversation's
-// first API response.
+// first API response. The type check keeps anything but a boolean out of the
+// JSON the detached generation is handed, so a future field shape cannot
+// travel into that process.
 const cacheWarm =
   data.prompt_cache && typeof data.prompt_cache.warm === 'boolean'
     ? data.prompt_cache.warm

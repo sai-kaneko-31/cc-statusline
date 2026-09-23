@@ -130,7 +130,7 @@ Example — an enthusiastic お嬢様 colleague:
 
 ```
 📂 ~/git/my-project  🔀 main             🚀 +121/-43
-🔲 Opus 5 (high)     ❤️ [████████░░]53% 🔥
+🔲 Opus 5 (high)     ❤️ [████████░░]53%
 💬 あら、README の表を全部組み直していますわね～！
 ```
 
