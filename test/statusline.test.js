@@ -627,29 +627,55 @@ describe('prompt cache warmth', () => {
       'the field must not change the line at all');
   });
 
-  it('a cold cache still reaches the comment prompt', () => {
-    // The only reason index.js keeps reading prompt_cache. Without this the
-    // parsing looks dead and the next reader deletes it.
+  // A stub claude that records the prompt it was handed. The caller removes
+  // the directory; wrapping it in a try/finally here would delete it before an
+  // async body had run.
+  function makeClaudeStub() {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccsl-cache-'));
+    const stub = path.join(dir, 'claude');
+    fs.writeFileSync(stub, `#!/bin/sh\nprintf '%s' "$2" > ${dir}/prompt.txt\nprintf ok\n`);
+    fs.chmodSync(stub, 0o755);
+    return { dir, env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOME: dir } };
+  }
+
+  it('--generate-comment names a cold cache in the prompt', () => {
+    const { dir, env } = makeClaudeStub();
     try {
-      const stub = path.join(dir, 'claude');
-      fs.writeFileSync(stub, `#!/bin/sh\nprintf '%s' "$2" > ${dir}/prompt.txt\nprintf ok\n`);
-      fs.chmodSync(stub, 0o755);
       const promptFor = (cacheWarm) => {
         execFileSync(process.execPath, [INDEX, '--generate-comment', JSON.stringify({
           branch: 'main', instruction: 'Be brief.', cacheKey: 'cache-test',
           previousComments: [], cacheWarm,
-        })], {
-          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HOME: dir },
-          encoding: 'utf8',
-          timeout: 10000,
-        });
+        })], { env, encoding: 'utf8', timeout: 10000 });
         return fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8');
       };
       assert.ok(promptFor(false).includes('prompt_cache=cold'),
         'a cold cache should be named in the prompt');
       assert.ok(!promptFor(true).includes('prompt_cache'),
         'a warm cache is not a pressure signal, so it should not be named');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stdin prompt_cache.warm reaches that prompt', async () => {
+    // The whole reason index.js still reads the field. The test above starts
+    // from the context object, so on its own it left the half that builds it
+    // unchecked — replacing the parse with `null` kept the suite green. This
+    // drives it from stdin, through the detached generation index.js spawns.
+    const { dir, env } = makeClaudeStub();
+    try {
+      const result = runWithArgs(stdinWith({ warm: false }),
+        ['--colleague-instruction', 'Be brief.'], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+      assert.equal(result.exitCode, 0);
+      const promptFile = path.join(dir, 'prompt.txt');
+      const deadline = Date.now() + 15000;
+      while (!fs.existsSync(promptFile) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      assert.ok(fs.existsSync(promptFile),
+        'index.js should have spawned the background generation');
+      assert.ok(fs.readFileSync(promptFile, 'utf8').includes('prompt_cache=cold'),
+        'a cold cache from stdin should reach the prompt');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -803,15 +829,13 @@ describe('rendered lines fit the terminal', () => {
         five_hour: { used_percentage: 100 },
         seven_day: { used_percentage: 100 },
       },
-      prompt_cache: { warm: true },
-    }],
+      }],
     ['long worktree name', {
       cwd: '/home/u/.claude/worktrees/a-long-worktree-name',
       model: { display_name: 'Sonnet 4.6' },
       worktree: { name: 'a-long-worktree-name-that-keeps-going' },
       context_window: { used_percentage: 5 },
       rate_limits: { seven_day: { used_percentage: 7 } },
-      prompt_cache: { warm: false },
     }],
     ['Japanese session name', {
       cwd: '/home/u/projects/another-directory',
@@ -829,8 +853,7 @@ describe('rendered lines fit the terminal', () => {
       context_window: { used_percentage: 30 },
       worktree: { name: '日本語のワークツリーの名前がとても長い場合' },
       session_name: 'session-name',
-      prompt_cache: { warm: true },
-    }],
+      }],
     ['Japanese cwd and session name', {
       cwd: '/home/u/プロジェクト/サブディレクトリ/さらに深いところ',
       model: { display_name: 'Opus 5' },
@@ -857,8 +880,7 @@ describe('rendered lines fit the terminal', () => {
       context_window: { used_percentage: 30 },
       session_name: 'no-branch-here-but-a-long-name',
       rate_limits: { five_hour: { used_percentage: 3 }, seven_day: { used_percentage: 9 } },
-      prompt_cache: { warm: true },
-    }],
+      }],
   ];
 
   for (const [label, data] of inputs) {
@@ -967,7 +989,6 @@ describe('narrow terminals drop the optional tail', () => {
       five_hour: { used_percentage: 10 },
       seven_day: { used_percentage: 20 },
     },
-    prompt_cache: { warm: true },
   };
 
   function linesAt(cols) {
@@ -1236,8 +1257,7 @@ describe('line 2 gives up its tail only for its own width', () => {
         five_hour: { used_percentage: 10 },
         seven_day: { used_percentage: 20 },
       },
-      prompt_cache: { warm: true },
-    }, [], {
+      }, [], {
       env: { ...process.env, COLUMNS: String(cols) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });

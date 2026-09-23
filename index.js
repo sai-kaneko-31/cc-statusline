@@ -165,9 +165,11 @@ const rateLimits = data.rate_limits || {};
 const fiveHourPct = windowPct(rateLimits.five_hour);
 const sevenDayPct = windowPct(rateLimits.seven_day);
 
-// Prompt cache warmth. A cold cache makes the next request re-send the whole
-// conversation, so it costs more and answers slower. Absent until the main
-// conversation's first API response.
+// Prompt cache warmth. Not drawn; read only to hand the colleague comment a
+// pressure signal, which is why the value travels all the way to contextObj
+// below. A cold cache makes the next request re-send the whole conversation,
+// so it costs more and answers slower. Absent until the main conversation's
+// first API response.
 const cacheWarm =
   data.prompt_cache && typeof data.prompt_cache.warm === 'boolean'
     ? data.prompt_cache.warm
@@ -445,7 +447,7 @@ if (sessionName) {
   }
 }
 
-// ── Line 2: model + context bar + cache warmth + rate limits ──
+// ── Line 2: model + context bar + rate limits ──
 let modelIcon;
 if (model.includes('Opus')) modelIcon = ICONS.OPUS;
 else if (model.includes('Sonnet')) modelIcon = ICONS.SONNET;

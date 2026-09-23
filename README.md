@@ -13,7 +13,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 |---------|-------------|
 | Nerd Font icons | Model-specific icons (Opus ``, Sonnet ``, Haiku ``) |
 | Context window bar | Context window remaining until auto-compact (85%), color-coded |
-| Rate limit usage | 5-hour and 7-day window usage, from `rate_limits`; dropped first on a narrow terminal |
+| Rate limit usage | 5-hour and 7-day window usage, from `rate_limits`; dropped on a narrow terminal |
 | Git stats | Branch, ahead/behind, insertions/deletions |
 | Worktree and session | Worktree name in place of the path, session name on line 1 |
 | 3-column alignment | Path/model, branch/context window bar, stats/rate limits |
