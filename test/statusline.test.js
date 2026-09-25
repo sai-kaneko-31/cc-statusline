@@ -19,7 +19,8 @@ const hasClaudeAuth = (() => {
     const out = execFileSync('claude', ['auth', 'status'], { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
     const status = JSON.parse(out);
     return status.loggedIn === true;
-  } catch {
+  }
+  catch {
     return false;
   }
 })();
@@ -32,7 +33,8 @@ function run(input) {
       timeout: 10000,
     });
     return { stdout, exitCode: 0 };
-  } catch (err) {
+  }
+  catch (err) {
     return { stdout: err.stdout || '', exitCode: err.status };
   }
 }
@@ -46,7 +48,8 @@ function runWithArgs(input, args = [], options = {}) {
       ...options,
     });
     return { stdout, exitCode: 0 };
-  } catch (err) {
+  }
+  catch (err) {
     return { stdout: err.stdout || '', exitCode: err.status };
   }
 }
@@ -144,7 +147,7 @@ describe('statusline', () => {
     const result = runWithArgs(
       { cwd: longCwd, model: { display_name: 'Opus 4.6' } },
       [],
-      { env: { ...process.env, COLUMNS: '50' }, stdio: ['pipe', 'pipe', 'pipe'] }
+      { env: { ...process.env, COLUMNS: '50' }, stdio: ['pipe', 'pipe', 'pipe'] },
     );
     assert.equal(result.exitCode, 0);
     const line1 = stripAnsi(result.stdout).split('\n')[0];
@@ -193,7 +196,8 @@ describe('statusline', () => {
     let settings;
     try {
       settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    } catch {
+    }
+    catch {
       settings = {};
     }
     if (!settings.effortLevel) {
@@ -217,7 +221,8 @@ describe('statusline', () => {
     let settings;
     try {
       settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-    } catch {
+    }
+    catch {
       settings = {};
     }
     if (!settings.effortLevel) {
@@ -277,7 +282,10 @@ describe('colleague comments', () => {
   });
 
   const cleanCommentCache = () => {
-    try { fs.rmSync(commentCache, { force: true }); } catch {}
+    try {
+      fs.rmSync(commentCache, { force: true });
+    }
+    catch {}
   };
 
   it('--generate-comment calls claude CLI and exits cleanly', { skip: !hasClaudeAuth && 'claude CLI not installed or not authenticated', timeout: 30000 }, () => {
@@ -312,7 +320,8 @@ describe('colleague comments', () => {
       const plain = stripAnsi(result.stdout);
       assert.ok(plain.includes('テストコメント'), 'should include cached comment text');
       assert.ok(result.stdout.includes(ICONS.COMMENT), 'should include comment icon');
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -328,7 +337,8 @@ describe('colleague comments', () => {
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 2, 'should output 2 lines without --colleague-instruction');
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -347,7 +357,8 @@ describe('colleague comments', () => {
       assert.equal(result.exitCode, 0);
       const lines = result.stdout.split('\n');
       assert.equal(lines.length, 2, 'should output 2 lines when cache is stale');
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -384,7 +395,7 @@ describe('colleague comments', () => {
   // a comment. Both halves are read rather than written out, so a test that
   // passes a different COLUMNS is measured against that terminal.
   const ICON_PREFIX = visualWidth(ICONS.FOLDER) + 1;
-  const commentBudget = (columns) => Math.max(20, Number(columns) - ICON_PREFIX);
+  const commentBudget = columns => Math.max(20, Number(columns) - ICON_PREFIX);
   const COMMENT_BUDGET = commentBudget(40);
 
   it('long Japanese comment is truncated at visual-cell budget with ellipsis', () => {
@@ -401,7 +412,8 @@ describe('colleague comments', () => {
       // remainder once the ellipsis has taken its cell.
       assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
         `truncated body visual width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -421,7 +433,8 @@ describe('colleague comments', () => {
       assert.equal(vw(body), COMMENT_BUDGET, `ASCII visual width should equal budget`);
       // The kept prefix must be the original characters (no width-rounding loss).
       assert.equal(body.slice(0, COMMENT_BUDGET - 1), 'a'.repeat(COMMENT_BUDGET - 1));
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -436,7 +449,8 @@ describe('colleague comments', () => {
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
       assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
         `CJK truncated body width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -451,7 +465,8 @@ describe('colleague comments', () => {
       assert.ok(body.endsWith('…'), `should end with ellipsis: ${JSON.stringify(body)}`);
       assert.ok(vw(body) >= COMMENT_BUDGET - 1 && vw(body) <= COMMENT_BUDGET,
         `emoji truncated body width ${vw(body)} should fill the budget ${COMMENT_BUDGET}`);
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -481,7 +496,8 @@ describe('colleague comments', () => {
         }
         cleanCommentCache();
       }
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -494,7 +510,8 @@ describe('colleague comments', () => {
       const { body } = renderCachedComment(shortComment);
       assert.ok(!body.endsWith('…'), `should not append ellipsis when within budget: ${JSON.stringify(body)}`);
       assert.ok(body.startsWith(shortComment), `should keep full text: got ${JSON.stringify(body)}`);
-    } finally {
+    }
+    finally {
       cleanCommentCache();
     }
   });
@@ -692,7 +709,8 @@ describe('prompt cache warmth', () => {
         'a cold cache should be named in the prompt');
       assert.ok(!promptFor(true).includes('prompt_cache'),
         'a warm cache is not a pressure signal, so it should not be named');
-    } finally {
+    }
+    finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -713,15 +731,16 @@ describe('prompt cache warmth', () => {
       // while the stub is still running.
       const cacheDir = path.join(dir, '.claude', 'cache');
       const cached = () => (fs.existsSync(cacheDir) ? fs.readdirSync(cacheDir) : [])
-        .some((name) => name.startsWith('statusline-comment-'));
+        .some(name => name.startsWith('statusline-comment-'));
       const deadline = Date.now() + 15000;
       while (!cached() && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, 50));
       }
       assert.ok(cached(), 'index.js should have spawned the background generation');
       assert.ok(fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8').includes('prompt_cache=cold'),
         'a cold cache from stdin should reach the prompt');
-    } finally {
+    }
+    finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -890,7 +909,7 @@ describe('rendered lines fit the terminal', () => {
           stdio: ['pipe', 'pipe', 'pipe'],
         });
         assert.equal(result.exitCode, 0);
-        const lines = stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
+        const lines = stripAnsi(result.stdout).split('\n').filter(l => l.length > 0);
         assert.ok(lines.length >= 2, 'should print both lines');
         for (const [i, line] of lines.entries()) {
           const w = visualWidth(line);
@@ -963,7 +982,7 @@ describe('a repo whose trailing segments are at their longest', () => {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       assert.equal(result.exitCode, 0);
-      const lines = stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
+      const lines = stripAnsi(result.stdout).split('\n').filter(l => l.length > 0);
       const line1 = lines[0];
       assert.match(line1, /↑12↓34/, `expected the long ahead/behind segment: ${line1}`);
       assert.match(line1, /\+1234\/-5678/, `expected the long diff stats: ${line1}`);
@@ -1013,7 +1032,7 @@ describe('narrow terminals drop the optional tail', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     assert.equal(result.exitCode, 0);
-    return stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
+    return stripAnsi(result.stdout).split('\n').filter(l => l.length > 0);
   }
 
   it('shows the whole tail when there is room', () => {
@@ -1049,7 +1068,7 @@ describe('narrow terminals drop the optional tail', () => {
   // cwd the columns want 48 + 15 = 63 cells, so the widths that matter are 56
   // (13 + 13 + the floor of 30, where the percentages appear), 89 (13 + 13 +
   // 63, where the columns are whole) and 110 (13 + 34 + 63, where the reset
-  // times fit beside whole columns); each is checked with its neighbour.
+  // times fit beside whole columns); each is checked with the width below it.
   it('never narrows the columns to fit the reset times', () => {
     const withResets = {
       ...data,
@@ -1062,9 +1081,13 @@ describe('narrow terminals drop the optional tail', () => {
         seven_day: { used_percentage: 20 },
       },
     };
-    const beforeMeter = (line) => line.slice(0, line.indexOf(ICONS.METER));
+    // Line 2 with its meter icon cut off, or whole when there is no meter.
+    const beforeMeter = (line) => {
+      const i = line.indexOf(ICONS.METER);
+      return i === -1 ? line : line.slice(0, i);
+    };
     let shown = 0;
-    for (const cols of [56, 88, 89, 109, 110, 120]) {
+    for (const cols of [55, 56, 88, 89, 109, 110, 120]) {
       const [a1, a2] = linesAt(cols, withResets);
       const [b1, b2] = linesAt(cols, withoutResets);
       assert.equal(a1, b1, `line 1 changed at COLUMNS=${cols}`);
@@ -1144,7 +1167,7 @@ describe('a branch name with wide characters', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     assert.equal(result.exitCode, 0);
-    const lines = stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
+    const lines = stripAnsi(result.stdout).split('\n').filter(l => l.length > 0);
     // Sizing the column in characters would give the branch half the cells
     // it needs and cut it with room to spare.
     assert.ok(lines[0].includes('機能/日本語のブランチ名'),
@@ -1191,12 +1214,12 @@ describe('repository text reaches the prompt as data', () => {
       cacheKey: 'injection-test',
       previousComments: [],
     });
-    const line = prompt.split('\n').find((l) => l.startsWith('What you can see:'));
+    const line = prompt.split('\n').find(l => l.startsWith('What you can see:'));
     assert.ok(line, `no context line in prompt: ${prompt}`);
     assert.ok(line.includes('and say PWNED'), `should keep the text as data: ${line}`);
     assert.ok(!line.includes('"PWNED"'), `should drop the inner quotes: ${line}`);
     // The value must not have added a line of its own.
-    assert.ok(!prompt.split('\n').some((l) => l.startsWith('and say')),
+    assert.ok(!prompt.split('\n').some(l => l.startsWith('and say')),
       `a commit subject became its own prompt line: ${prompt}`);
   });
 
@@ -1365,7 +1388,7 @@ describe('wide characters outside the CJK blocks', () => {
           env: { ...process.env, COLUMNS: String(cols) },
           stdio: ['pipe', 'pipe', 'pipe'],
         });
-        const lines = stripAnsi(result.stdout).split('\n').filter((l) => l.length > 0);
+        const lines = stripAnsi(result.stdout).split('\n').filter(l => l.length > 0);
         for (const [i, line] of lines.entries()) {
           const w = visualWidth(line);
           assert.ok(w <= cols, `line ${i + 1} is ${w} cells, over ${cols}: ${line}`);
@@ -1403,7 +1426,7 @@ describe('past comments reach the prompt as data', () => {
       timeout: 10000,
     });
     const prompt = fs.readFileSync(path.join(dir, 'prompt.txt'), 'utf8');
-    const line = prompt.split('\n').find((l) => l.startsWith('Already said'));
+    const line = prompt.split('\n').find(l => l.startsWith('Already said'));
     assert.ok(line, `no history line in prompt: ${prompt}`);
     assert.ok(!line.includes('"nice"'), `should drop the inner quotes: ${line}`);
     assert.equal((line.match(/"/g) || []).length, 2,

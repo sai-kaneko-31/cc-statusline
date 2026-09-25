@@ -111,12 +111,14 @@ env -u CLAUDECODE -u CLAUDE_CODE_ENTRYPOINT -u CLAUDE_CODE_DISABLE_BACKGROUND_TA
 
 - CommonJS (`require`), semicolons required
 - Function declarations (`function`); arrow functions only for variable assignments
-- ESLint config: `eslint.config.js` (flat config, `prefer-const`, `semi`)
+- ESLint config: `eslint.config.mjs` (flat config). It is ESM because `@stylistic/eslint-plugin` ships only as ESM and the test job runs on Node 18, which cannot `require()` an ES module
+- Formatting is `@stylistic/eslint-plugin`'s `configs.customize` preset at its defaults, except `semi: true`: `else`/`catch` on their own line (stroustrup), a continued line starts with its operator, and a single-parameter arrow function takes parentheses only with a block body. `npm run lint:fix` applies it
+- A Claude Code session started in this repository runs `.claude/hooks/eslint-fix.js` after each Edit or Write of a `.js` file (PostToolUse, `.claude/settings.json`). It runs `eslint --fix` on that file and tells Claude when the file changed on disk, which means rereading it before the next edit, and which problems remain
 
 ## Gotchas
 
 - Invalid JSON on stdin causes silent exit (`process.exit(0)`, no output)
-- Statusline re-runs only on Claude Code triggers (new message, `/compact`, permission/vim mode change), debounced 300ms
+- Statusline re-runs only on Claude Code triggers (new message, `/compact`, permission/vim mode change, a rate limit window reaching `resets_at`), debounced 300ms
 - Nothing in the output counts down (the rate limit resets are wall-clock times), so `statusLine.refreshInterval` is optional; it is only worth setting to keep git state current while background subagents work
 - `statusLine.hideVimModeIndicator` (settings.json) hides Claude Code's own vim indicator; unrelated to this command's output
 - Icons are emoji and need no Nerd Font or terminal width setting

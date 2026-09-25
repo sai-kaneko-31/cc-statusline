@@ -42,7 +42,7 @@ if (generateCommentIdx !== -1) {
         .trim();
 
     const prevStr = (previousComments || []).length > 0
-      ? `\nAlready said (do not repeat these, or their angle): ${previousComments.map((c) => `"${asData(c, 200)}"`).join(', ')}`
+      ? `\nAlready said (do not repeat these, or their angle): ${previousComments.map(c => `"${asData(c, 200)}"`).join(', ')}`
       : '';
 
     // Build context fields, omitting empty/unknown values. Order matters: the
@@ -50,7 +50,7 @@ if (generateCommentIdx !== -1) {
     // is about comes before the numbers.
     const ctxParts = [];
     if (sessionName) ctxParts.push(`session="${asData(sessionName)}"`);
-    if (commits.length > 0) ctxParts.push(`recent_commits=[${commits.map((c) => `"${asData(c)}"`).join(', ')}]`);
+    if (commits.length > 0) ctxParts.push(`recent_commits=[${commits.map(c => `"${asData(c)}"`).join(', ')}]`);
     if (filesStr) ctxParts.push(`uncommitted_files=[${asData(filesStr, 200)}]`);
     if (worktreeName) ctxParts.push(`worktree="${asData(worktreeName)}"`);
     if (branch) ctxParts.push(`branch="${asData(branch)}"`);
@@ -101,12 +101,14 @@ if (generateCommentIdx !== -1) {
       const maxHistory = parseInt(process.env.STATUSLINE_COMMENT_HISTORY_SIZE) || 5;
       try {
         fs.mkdirSync(cacheDir, { recursive: true });
-      } catch {}
+      }
+      catch {}
       // Append to history, keep last N
       const history = [...(previousComments || []), result].slice(-maxHistory);
       fs.writeFileSync(cacheFile, JSON.stringify({ comment: result, history }));
     }
-  } catch {}
+  }
+  catch {}
   process.exit(0);
 }
 
@@ -115,8 +117,8 @@ let data;
 try {
   const input = fs.readFileSync(0, 'utf8');
   data = JSON.parse(input);
-
-} catch {
+}
+catch {
   process.exit(0);
 }
 
@@ -134,7 +136,8 @@ if (!effortLevel) {
     const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
     const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
     effortLevel = settings.effortLevel || '';
-  } catch {}
+  }
+  catch {}
 }
 const usedPct = data.context_window && data.context_window.used_percentage;
 const costUsd = data.cost && data.cost.total_cost_usd;
@@ -188,8 +191,8 @@ const sevenDayReset = resetTime(rateLimits.seven_day, true);
 // first API response. The type check keeps anything but a boolean out of the
 // JSON the detached generation is handed, so a future field shape cannot
 // travel into that process.
-const cacheWarm =
-  data.prompt_cache && typeof data.prompt_cache.warm === 'boolean'
+const cacheWarm
+  = data.prompt_cache && typeof data.prompt_cache.warm === 'boolean'
     ? data.prompt_cache.warm
     : null;
 
@@ -268,7 +271,8 @@ function exec(cmd) {
       timeout: 3000,
       stdio: ['pipe', 'pipe', 'pipe'],
     }).trim();
-  } catch {
+  }
+  catch {
     return '';
   }
 }
@@ -316,21 +320,21 @@ let gitAdded = '';
 let gitDeleted = '';
 
 if (exec(`git -C "${cwd}" rev-parse --git-dir`)) {
-  gitBranch =
-    exec(`git -C "${cwd}" symbolic-ref --short HEAD`) ||
-    exec(`git -C "${cwd}" rev-parse --short HEAD`);
+  gitBranch
+    = exec(`git -C "${cwd}" symbolic-ref --short HEAD`)
+      || exec(`git -C "${cwd}" rev-parse --short HEAD`);
 
   // Ahead / behind
   const upstream = exec(
-    `git -C "${cwd}" rev-parse --abbrev-ref --symbolic-full-name "@{u}"`
+    `git -C "${cwd}" rev-parse --abbrev-ref --symbolic-full-name "@{u}"`,
   );
   if (upstream) {
-    const ahead =
-      parseInt(exec(`git -C "${cwd}" rev-list --count "${upstream}"..HEAD`)) ||
-      0;
-    const behind =
-      parseInt(exec(`git -C "${cwd}" rev-list --count "HEAD..${upstream}"`)) ||
-      0;
+    const ahead
+      = parseInt(exec(`git -C "${cwd}" rev-list --count "${upstream}"..HEAD`))
+        || 0;
+    const behind
+      = parseInt(exec(`git -C "${cwd}" rev-list --count "HEAD..${upstream}"`))
+        || 0;
     if (ahead > 0 && behind > 0) gitAheadBehind = `↑${ahead}↓${behind}`;
     else if (ahead > 0) gitAheadBehind = `↑${ahead}`;
     else if (behind > 0) gitAheadBehind = `↓${behind}`;
@@ -383,12 +387,12 @@ const termCols = process.stderr.columns || parseInt(process.env.COLUMNS) || 100;
 const ICON_SEG = visualWidth(ICONS.FOLDER) + 1;
 const GAP_ICON_SEG = visualWidth(COL_SEP) + ICON_SEG;
 
-const line1Outside =
-  ICON_SEG +                            // dir icon + space
-  (gitBranch ? GAP_ICON_SEG : 0) +      // COL_SEP + branch icon + space
-  GAP_ICON_SEG +                        // COL_SEP + rocket icon + space
-  visualWidth(gitAheadBehind || '-') +
-  visualWidth(statsText);
+const line1Outside
+  = ICON_SEG // dir icon + space
+    + (gitBranch ? GAP_ICON_SEG : 0) // COL_SEP + branch icon + space
+    + GAP_ICON_SEG // COL_SEP + rocket icon + space
+    + visualWidth(gitAheadBehind || '-')
+    + visualWidth(statsText);
 
 // Narrowest the columns are allowed to get before the layout gives up on
 // fitting a segment in.
@@ -398,24 +402,24 @@ const COLS_FLOOR = 30;
 // the tail drops it instead of running past the edge. The context bar stays:
 // it is what the status line is for.
 let rateText = rateSegment(false);
-const line2Outside = (rateTail) =>
-  ICON_SEG +                            // model icon + space
-  GAP_ICON_SEG +                        // COL_SEP + heart icon + space
-  (rateTail ? GAP_ICON_SEG + visualWidth(rateTail) : 0); // COL_SEP + meter icon + space
+const line2Outside = rateTail =>
+  ICON_SEG // model icon + space
+  + GAP_ICON_SEG // COL_SEP + heart icon + space
+  + (rateTail ? GAP_ICON_SEG + visualWidth(rateTail) : 0); // COL_SEP + meter icon + space
 // Only line 2's own width decides what line 2 gives up. Line 1's tail can be
 // the longer of the two, and dropping segments off line 2 does nothing for it.
 if (rateText && termCols - line2Outside(rateText) < COLS_FLOOR) rateText = '';
 
 const maxContentCols = Math.max(
   COLS_FLOOR,
-  termCols - Math.max(line1Outside, line2Outside(rateText))
+  termCols - Math.max(line1Outside, line2Outside(rateText)),
 );
 
 // Effort rides inside the model segment as "Opus 5 (high)".
 const rawEffortSuffix = effortLevel ? ` (${effortLevel})` : '';
 const rawCol1 = Math.max(
   visualWidth(displayDir),
-  visualWidth(model) + visualWidth(rawEffortSuffix)
+  visualWidth(model) + visualWidth(rawEffortSuffix),
 );
 const rawCol2 = Math.max(visualWidth(gitBranch), ctxVisibleLen);
 
@@ -423,7 +427,8 @@ let col1Len, col2Len;
 if (rawCol1 + rawCol2 <= maxContentCols) {
   col1Len = rawCol1;
   col2Len = rawCol2;
-} else {
+}
+else {
   col2Len = Math.max(ctxVisibleLen, Math.min(rawCol2, maxContentCols - 10));
   col1Len = Math.max(10, Math.min(rawCol1, maxContentCols - col2Len));
 }
@@ -440,9 +445,9 @@ const displayDirTrunc = truncStrVisual(displayDir, col1Len);
 // is not "too narrow": the column already reserved room for both, so the
 // floor applies only once the column has actually been squeezed.
 const MODEL_MIN_CELLS = 5;
-const effortFits =
-  col1Len >= visualWidth(model) + visualWidth(rawEffortSuffix) ||
-  col1Len - visualWidth(rawEffortSuffix) >= MODEL_MIN_CELLS;
+const effortFits
+  = col1Len >= visualWidth(model) + visualWidth(rawEffortSuffix)
+    || col1Len - visualWidth(rawEffortSuffix) >= MODEL_MIN_CELLS;
 const effortSuffix = rawEffortSuffix && effortFits ? rawEffortSuffix : '';
 const modelTrunc = truncStrVisual(model, col1Len - visualWidth(effortSuffix));
 const gitBranchTrunc = truncStrVisual(gitBranch, col2Len);
@@ -456,7 +461,8 @@ if (gitBranch) {
 
 if (gitAheadBehind) {
   line1 += `${COL_SEP}${T.aheadBehind}${ICONS.ROCKET} ${gitAheadBehind}${RESET}`;
-} else {
+}
+else {
   line1 += `${COL_SEP}${T.dim}${ICONS.ROCKET} -${RESET}`;
 }
 
@@ -466,8 +472,8 @@ line1 += statsDisplay;
 // column widths are sized for line 2, whose trailing segment is wider. Drop
 // the name rather than let it push the line past the terminal edge.
 if (sessionName) {
-  const line1Len =
-    line1Outside + col1Len + (gitBranch ? col2Len : 0);
+  const line1Len
+    = line1Outside + col1Len + (gitBranch ? col2Len : 0);
   const sessionRoom = termCols - line1Len - GAP_ICON_SEG;
   if (sessionRoom >= 4) {
     const label = truncStrVisual(sessionName, sessionRoom);
@@ -506,7 +512,8 @@ if (usedPct != null && usedPct !== '') {
   const ctxPadding = ctxPad > 0 ? ' '.repeat(ctxPad) : '';
 
   line2 += `${COL_SEP}${barColor}${ICONS.HEART} [${barFilled}${barEmpty}]${remaining}%${ctxPadding}${RESET}`;
-} else {
+}
+else {
   line2 += `${COL_SEP}${T.dim}${ICONS.HEART} ${' '.repeat(col2Len)}${RESET}`;
 }
 
@@ -533,7 +540,8 @@ if (colleagueInstruction !== null) {
     if (Date.now() - stat.mtimeMs < commentTtl && commentData.comment) {
       cachedComment = commentData.comment;
     }
-  } catch {}
+  }
+  catch {}
 
   // If no fresh cache, spawn background generation
   if (!cachedComment) {
@@ -542,7 +550,7 @@ if (colleagueInstruction !== null) {
     // leave the model guessing from paths.
     const recentCommits = exec(`git -C "${cwd}" log --format=%s -n 3`);
     const now = new Date();
-    const p2 = (n) => String(n).padStart(2, '0');
+    const p2 = n => String(n).padStart(2, '0');
     const contextObj = {
       branch: gitBranch,
       changedFiles: changedFiles ? changedFiles.split('\n').slice(0, 5) : [],
