@@ -13,7 +13,7 @@ A [Claude Code](https://docs.anthropic.com/en/docs/claude-code) statusline comma
 |---------|-------------|
 | Emoji icons | Model-specific icons (Opus 🎼, Sonnet 📜, Haiku 🍃); no special font or terminal setting |
 | Context window bar | Context window remaining until auto-compact (85%), color-coded |
-| Rate limit usage | 5-hour and 7-day window usage, from `rate_limits`; dropped on a narrow terminal |
+| Rate limit usage | 5-hour and 7-day window usage and when each resets, from `rate_limits`; the reset times yield to the columns, and the whole segment is dropped on a narrow terminal |
 | Git stats | Branch, ahead/behind, insertions/deletions |
 | Worktree and session | Worktree name in place of the path, session name on line 1 |
 | 3-column alignment | Path/model, branch/context window bar, stats/rate limits |
@@ -44,7 +44,7 @@ Add to `~/.claude/settings.json`:
 
 ### Refreshing between events
 
-The statusline re-runs only when Claude Code emits an event (new message, `/compact`, mode change). Nothing here is time-based, so no timer is needed. Add `refreshInterval` (seconds) if you want git state to keep up while background subagents work and the main session sits idle:
+The statusline re-runs only when Claude Code emits an event (new message, `/compact`, mode change). Nothing here counts down (the rate limit resets are wall-clock times), so no timer is needed. Add `refreshInterval` (seconds) if you want git state to keep up while background subagents work and the main session sits idle:
 
 ```json
 {
@@ -60,7 +60,7 @@ The statusline re-runs only when Claude Code emits an event (new message, `/comp
 
 ```
 Line 1: 📂 <path>         🔀 <branch>              🚀 <ahead/behind> <+added/-deleted>   📄 <session>
-Line 2: 🔲 <model> (<effort>)  ❤️ [<bar>]<remaining>%  📊 5h <n>% 7d <n>%
+Line 2: 🔲 <model> (<effort>)  ❤️ [<bar>]<remaining>%  📊 5h <n>% (<HH:MM>) 7d <n>% (<M/D HH:MM>)
          ───col1───        ─────col2─────                ───col3───
 ```
 
@@ -76,9 +76,11 @@ Every segment past the branch is optional and simply absent when Claude Code doe
 
 ### Rate limit usage
 
-`rate_limits.five_hour` and `rate_limits.seven_day` render as `5h <n>% 7d <n>%`. Claude Code sends them to claude.ai Pro and Max subscribers after the first API response, and drops each window once its `resets_at` passes, so either half can be missing.
+`rate_limits.five_hour` and `rate_limits.seven_day` render as `5h 25% (17:00) 7d 86% (9/28 10:00)`: the usage, then the local time each window resets, the 7-day one with its date. Claude Code sends them to claude.ai Pro and Max subscribers after the first API response, and drops each window once its `resets_at` passes, so either half can be missing.
 
-On a terminal too narrow to hold the columns and the whole tail, line 2 drops the rate limits, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge on a narrow terminal. The width at which it stops overflowing is everything line 1 spends outside its two columns — the three icons with their trailing spaces, the two column gaps, and the tail — plus the 30 cells the two columns may shrink to together. A short cwd and branch never reach that floor and fit below these widths. It moves with the digits in the tail: 13 + 18 + 30 = 61 columns for `↑12↓34` and `+1234/-5678`, and 65 for `↑123↓456` and `+12345/-67890`. `MIN_SUPPORTED_COLS` in the tests spells the arithmetic out, including the space the diff stats carry in front of them.
+The reset is a wall-clock time rather than a countdown, because the status line redraws only when Claude Code triggers it, and a countdown would sit stale between redraws. A window without a numeric `resets_at` shows its usage alone.
+
+The reset times rank below every other segment. They appear only when the path, branch, model and effort keep the width they would have without them, so a narrower terminal shows `5h 25% 7d 86%` instead. On a terminal too narrow to hold the columns and even that, line 2 drops the rate limits, keeping the context bar. Line 1's tail (ahead/behind and diff stats) is not optional, so a long branch name with large diff stats can still run past the edge on a narrow terminal. The width at which it stops overflowing is everything line 1 spends outside its two columns — the three icons with their trailing spaces, the two column gaps, and the tail — plus the 30 cells the two columns may shrink to together. A short cwd and branch never reach that floor and fit below these widths. It moves with the digits in the tail: 13 + 18 + 30 = 61 columns for `↑12↓34` and `+1234/-5678`, and 65 for `↑123↓456` and `+12345/-67890`. `MIN_SUPPORTED_COLS` in the tests spells the arithmetic out, including the space the diff stats carry in front of them.
 
 ### Context window bar color
 

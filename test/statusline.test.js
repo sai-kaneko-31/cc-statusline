@@ -9,6 +9,11 @@ const { ICONS, visualWidth } = require('../lib/widths');
 const INDEX = path.join(__dirname, '..', 'index.js');
 const REPO_CWD = path.join(__dirname, '..');
 
+// rate_limits.*.resets_at is Unix epoch seconds. These two are 2026-09-25 08:00
+// and 2026-09-28 01:00 UTC.
+const FIVE_HOUR_RESET = Date.UTC(2026, 8, 25, 8, 0) / 1000;
+const SEVEN_DAY_RESET = Date.UTC(2026, 8, 28, 1, 0) / 1000;
+
 const hasClaudeAuth = (() => {
   try {
     const out = execFileSync('claude', ['auth', 'status'], { encoding: 'utf8', stdio: 'pipe', timeout: 5000 });
@@ -596,6 +601,38 @@ describe('rate limits', () => {
     const plain = stripAnsi(result.stdout);
     assert.ok(!/\d\d:\d\d:\d\d/.test(plain), 'should not print a wall clock');
   });
+
+  function runInZone(tz, rateLimits) {
+    const result = runWithArgs(stdinWith(rateLimits), [], {
+      env: { ...process.env, TZ: tz, COLUMNS: '120' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    assert.equal(result.exitCode, 0);
+    return stripAnsi(result.stdout);
+  }
+
+  // Each window's reset in local time, the 7-day one with its date.
+  for (const [tz, want] of [
+    ['Asia/Tokyo', '5h 25% (17:00) 7d 86% (9/28 10:00)'],
+    ['UTC', '5h 25% (08:00) 7d 86% (9/28 01:00)'],
+  ]) {
+    it(`shows when each window resets in ${tz}`, () => {
+      const plain = runInZone(tz, {
+        five_hour: { used_percentage: 25, resets_at: FIVE_HOUR_RESET },
+        seven_day: { used_percentage: 86, resets_at: SEVEN_DAY_RESET },
+      });
+      assert.ok(plain.includes(want), plain);
+    });
+  }
+
+  it('shows the percentage alone when resets_at is missing or not a number', () => {
+    const plain = runInZone('Asia/Tokyo', {
+      five_hour: { used_percentage: 25, resets_at: 'soon' },
+      seven_day: { used_percentage: 86 },
+    });
+    const line2 = plain.split('\n')[1];
+    assert.ok(line2.endsWith('5h 25% 7d 86%'), `should show no reset: ${line2}`);
+  });
 });
 
 describe('prompt cache warmth', () => {
@@ -775,6 +812,8 @@ describe('rendered lines fit the terminal', () => {
   // Every cwd here is outside a git repo. Pointing one at this checkout would
   // make the column widths depend on the path and the branch name, which
   // differ between a working copy and CI's detached checkout.
+  // 2026-12-15 12:00 UTC: the month and day are two digits in any time zone.
+  const TWO_DIGIT_RESET = Date.UTC(2026, 11, 15, 12, 0) / 1000;
   const inputs = [
     ['everything at once', {
       cwd: '/home/u/projects/a-fairly-long-project-directory',
@@ -783,8 +822,8 @@ describe('rendered lines fit the terminal', () => {
       context_window: { used_percentage: 55 },
       session_name: 'a-very-long-session-name-that-keeps-going-and-going',
       rate_limits: {
-        five_hour: { used_percentage: 100 },
-        seven_day: { used_percentage: 100 },
+        five_hour: { used_percentage: 100, resets_at: TWO_DIGIT_RESET },
+        seven_day: { used_percentage: 100, resets_at: TWO_DIGIT_RESET },
       },
     }],
     ['long worktree name', {
@@ -934,6 +973,26 @@ describe('a repo whose trailing segments are at their longest', () => {
       }
     });
   }
+
+  it('shows a reset time that fits in what line 1 already spends', () => {
+    // Line 1 spends 31 cells outside the columns here, and line 2 with
+    // '5h 10% (08:00)' spends 27, so the reset time costs the columns nothing
+    // even though the long branch has them narrower than they want.
+    const result = runWithArgs({
+      cwd: repo,
+      model: { display_name: 'Opus 5' },
+      context_window: { used_percentage: 30 },
+      rate_limits: {
+        five_hour: { used_percentage: 10, resets_at: FIVE_HOUR_RESET },
+      },
+    }, [], {
+      env: { ...process.env, TZ: 'UTC', COLUMNS: '80' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    const [line1, line2] = stripAnsi(result.stdout).split('\n');
+    assert.ok(line1.includes('…'), `precondition: line 1 must be squeezed: ${line1}`);
+    assert.ok(line2.endsWith('5h 10% (08:00)'), `should keep the reset time: ${line2}`);
+  });
 });
 
 describe('narrow terminals drop the optional tail', () => {
@@ -943,14 +1002,14 @@ describe('narrow terminals drop the optional tail', () => {
     effort: { level: 'xhigh' },
     context_window: { used_percentage: 30 },
     rate_limits: {
-      five_hour: { used_percentage: 10 },
-      seven_day: { used_percentage: 20 },
+      five_hour: { used_percentage: 10, resets_at: FIVE_HOUR_RESET },
+      seven_day: { used_percentage: 20, resets_at: SEVEN_DAY_RESET },
     },
   };
 
-  function linesAt(cols) {
-    const result = runWithArgs(data, [], {
-      env: { ...process.env, COLUMNS: String(cols) },
+  function linesAt(cols, input = data) {
+    const result = runWithArgs(input, [], {
+      env: { ...process.env, TZ: 'UTC', COLUMNS: String(cols) },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     assert.equal(result.exitCode, 0);
@@ -959,7 +1018,61 @@ describe('narrow terminals drop the optional tail', () => {
 
   it('shows the whole tail when there is room', () => {
     const lines = linesAt(100);
-    assert.ok(lines[1].includes('5h 10% 7d 20%'), lines[1]);
+    assert.ok(lines[1].includes('5h 10% (08:00) 7d 20% (9/28 01:00)'), lines[1]);
+  });
+
+  // Line 2 spends 13 cells outside the columns besides the tail. The columns
+  // need 29 to show 'Opus 5 (xhigh)' and the context bar whole, and the reset
+  // times may not take any of that: the whole tail is 34 cells and needs
+  // 13 + 34 + 29 = 76. The percentages alone are 13 cells and only need the
+  // columns' floor of 30, so 56.
+  it('drops the reset times before the columns need their cells', () => {
+    const lines = linesAt(75);
+    assert.ok(lines[1].endsWith('5h 10% 7d 20%'), `should keep the percentages alone: ${lines[1]}`);
+    assert.ok(lines[1].includes('Opus 5 (xhigh)'), `should keep the effort: ${lines[1]}`);
+    for (const [i, line] of lines.entries()) {
+      const w = visualWidth(line);
+      assert.ok(w <= 75, `line ${i + 1} is ${w} cells, over 75: ${line}`);
+    }
+  });
+
+  it('shows the reset times from the width the columns fit beside them', () => {
+    const lines = linesAt(76);
+    assert.ok(lines[1].endsWith('5h 10% (08:00) 7d 20% (9/28 01:00)'), lines[1]);
+    assert.ok(lines[1].includes('Opus 5 (xhigh)'), `should keep the effort: ${lines[1]}`);
+    assert.ok(visualWidth(lines[1]) <= 76, `line 2 is ${visualWidth(lines[1])} cells: ${lines[1]}`);
+  });
+
+  // Reset times rank below every column segment, so adding them may change
+  // nothing but the tail. Compare against the same input without resets_at:
+  // line 1 must match, and line 2 must match up to the meter icon. With this
+  // cwd the columns want 48 + 15 = 63 cells, so the widths that matter are 56
+  // (13 + 13 + the floor of 30, where the percentages appear), 89 (13 + 13 +
+  // 63, where the columns are whole) and 110 (13 + 34 + 63, where the reset
+  // times fit beside whole columns); each is checked with its neighbour.
+  it('never narrows the columns to fit the reset times', () => {
+    const withResets = {
+      ...data,
+      cwd: '/home/u/projects/a-fairly-long-project-directory',
+    };
+    const withoutResets = {
+      ...withResets,
+      rate_limits: {
+        five_hour: { used_percentage: 10 },
+        seven_day: { used_percentage: 20 },
+      },
+    };
+    const beforeMeter = (line) => line.slice(0, line.indexOf(ICONS.METER));
+    let shown = 0;
+    for (const cols of [56, 88, 89, 109, 110, 120]) {
+      const [a1, a2] = linesAt(cols, withResets);
+      const [b1, b2] = linesAt(cols, withoutResets);
+      assert.equal(a1, b1, `line 1 changed at COLUMNS=${cols}`);
+      assert.equal(beforeMeter(a2), beforeMeter(b2), `line 2's columns changed at COLUMNS=${cols}`);
+      if (a2.includes('(08:00)')) shown++;
+    }
+    // Without this, a build that never shows the reset times would pass.
+    assert.ok(shown > 0, 'the reset times should appear at some width');
   });
 
   it('drops rate limits rather than overflow at COLUMNS=50', () => {

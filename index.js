@@ -161,9 +161,25 @@ function windowPct(window) {
   const pct = Math.round(parseFloat(window && window.used_percentage));
   return Number.isFinite(pct) ? pct : null;
 }
+// When a rate limit window resets, as local wall-clock time: "17:00", or
+// "9/28 10:00" with the date. Null unless resets_at is a usable epoch in
+// seconds. A wall-clock time rather than a countdown, because the status line
+// redraws only on Claude Code's triggers and a countdown would go stale between
+// them; the window reaching resets_at is itself one of those triggers.
+function resetTime(window, withDate) {
+  const sec = window && window.resets_at;
+  if (typeof sec !== 'number' || !(sec > 0)) return null;
+  const d = new Date(sec * 1000);
+  if (Number.isNaN(d.getTime())) return null;
+  const hhmm = d.toTimeString().slice(0, 5);
+  return withDate ? `${d.getMonth() + 1}/${d.getDate()} ${hhmm}` : hhmm;
+}
 const rateLimits = data.rate_limits || {};
 const fiveHourPct = windowPct(rateLimits.five_hour);
 const sevenDayPct = windowPct(rateLimits.seven_day);
+// The 5-hour window resets within five hours, so its time alone is enough.
+const fiveHourReset = resetTime(rateLimits.five_hour, false);
+const sevenDayReset = resetTime(rateLimits.seven_day, true);
 
 // Prompt cache warmth. Not drawn; read only to hand the colleague comment a
 // pressure signal, which is why the value travels all the way to contextObj
@@ -343,10 +359,15 @@ const statsDisplay = hasStats
 
 // Rate limit usage closes line 2. Empty when neither window arrives, which is
 // the normal case outside claude.ai Pro/Max and before the first API response.
-const rateParts = [];
-if (fiveHourPct != null) rateParts.push(`5h ${fiveHourPct}%`);
-if (sevenDayPct != null) rateParts.push(`7d ${sevenDayPct}%`);
-const rateText = rateParts.join(' ');
+// The short form leaves out the reset times, for when the columns need the room.
+function rateSegment(withResets) {
+  const part = (label, pct, reset) =>
+    `${label} ${pct}%${withResets && reset ? ` (${reset})` : ''}`;
+  const parts = [];
+  if (fiveHourPct != null) parts.push(part('5h', fiveHourPct, fiveHourReset));
+  if (sevenDayPct != null) parts.push(part('7d', sevenDayPct, sevenDayReset));
+  return parts.join(' ');
+}
 
 // ── Column widths ──
 const ctxVisibleLen = 15; // [██████████]XX%
@@ -376,18 +397,18 @@ const COLS_FLOOR = 30;
 // Line 2's tail is optional, so a terminal too narrow for both the floor and
 // the tail drops it instead of running past the edge. The context bar stays:
 // it is what the status line is for.
-let showRate = rateText !== '';
-const line2Outside = () =>
+let rateText = rateSegment(false);
+const line2Outside = (rateTail) =>
   ICON_SEG +                            // model icon + space
   GAP_ICON_SEG +                        // COL_SEP + heart icon + space
-  (showRate ? GAP_ICON_SEG + visualWidth(rateText) : 0); // COL_SEP + meter icon + space
+  (rateTail ? GAP_ICON_SEG + visualWidth(rateTail) : 0); // COL_SEP + meter icon + space
 // Only line 2's own width decides what line 2 gives up. Line 1's tail can be
 // the longer of the two, and dropping segments off line 2 does nothing for it.
-if (showRate && termCols - line2Outside() < COLS_FLOOR) showRate = false;
+if (rateText && termCols - line2Outside(rateText) < COLS_FLOOR) rateText = '';
 
 const maxContentCols = Math.max(
   COLS_FLOOR,
-  termCols - Math.max(line1Outside, line2Outside())
+  termCols - Math.max(line1Outside, line2Outside(rateText))
 );
 
 // Effort rides inside the model segment as "Opus 5 (high)".
@@ -406,6 +427,12 @@ if (rawCol1 + rawCol2 <= maxContentCols) {
   col2Len = Math.max(ctxVisibleLen, Math.min(rawCol2, maxContentCols - 10));
   col1Len = Math.max(10, Math.min(rawCol1, maxContentCols - col2Len));
 }
+
+// The reset times rank below every column segment, so they go in only where
+// line 2 has cells left once the columns are sized without them. A path,
+// branch or effort is never cut to make room for a reset time.
+const rateFull = rateSegment(true);
+if (rateText && line2Outside(rateFull) + col1Len + col2Len <= termCols) rateText = rateFull;
 
 const displayDirTrunc = truncStrVisual(displayDir, col1Len);
 // Keep at least this many cells of the model name; a column too narrow for
@@ -483,7 +510,7 @@ if (usedPct != null && usedPct !== '') {
   line2 += `${COL_SEP}${T.dim}${ICONS.HEART} ${' '.repeat(col2Len)}${RESET}`;
 }
 
-if (showRate) {
+if (rateText) {
   line2 += `${COL_SEP}${T.meter}${ICONS.METER} ${rateText}${RESET}`;
 }
 
