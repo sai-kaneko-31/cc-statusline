@@ -28,6 +28,16 @@ function findProjectRoot(dir) {
   }
 }
 
+// Why ESLint could not run. It opens its error output with an "Oops!" banner
+// and its version, so the cause is the first line after those.
+function failureReason(result) {
+  if (result.error) return result.error.message;
+  const cause = (result.stderr || '').split('\n')
+    .map(line => line.trim())
+    .find(line => line && !line.startsWith('Oops!') && !/^ESLint: \d/.test(line));
+  return cause || `exit status ${result.status}, no error output`;
+}
+
 function main(input) {
   let filePath;
   try {
@@ -77,7 +87,7 @@ function main(input) {
     }
   }
   else if (result.status !== 0) {
-    notes.push(`ESLint could not lint ${rel}: ${(result.stderr || '').trim().split('\n')[0]}`);
+    notes.push(`ESLint could not lint ${rel}: ${failureReason(result)}`);
   }
   if (notes.length > 0) report(notes.join('\n'));
 }

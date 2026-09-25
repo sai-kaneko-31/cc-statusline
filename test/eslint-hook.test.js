@@ -26,10 +26,11 @@ function runHook(filePath) {
 
 // A project outside this checkout that lints with this repository's config,
 // so the tests can write files without touching the working tree.
-function makeProject({ withEslint }) {
+function makeProject({ withEslint, config }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccsl-eslint-hook-'));
-  const config = pathToFileURL(path.join(REPO, 'eslint.config.mjs')).href;
-  fs.writeFileSync(path.join(dir, 'eslint.config.mjs'), `export { default } from '${config}';\n`);
+  const repoConfig = pathToFileURL(path.join(REPO, 'eslint.config.mjs')).href;
+  fs.writeFileSync(path.join(dir, 'eslint.config.mjs'),
+    config || `export { default } from '${repoConfig}';\n`);
   if (withEslint) {
     fs.symlinkSync(path.join(REPO, 'node_modules'), path.join(dir, 'node_modules'), 'dir');
   }
@@ -78,6 +79,25 @@ describe('eslint-fix hook', () => {
     fs.writeFileSync(file, 'a=1\n');
     assert.equal(runHook(file), '');
     assert.equal(fs.readFileSync(file, 'utf8'), 'a=1\n');
+  });
+
+  // A checkout that pulled a new plugin without running npm install again.
+  // ESLint then exits 2 and opens its error output with a banner; the note
+  // has to carry the cause after it.
+  it('passes on why ESLint could not run', () => {
+    const broken = makeProject({
+      withEslint: true,
+      config: 'import missing from \'no-such-package-ccsl\';\nexport default [missing];\n',
+    });
+    try {
+      const file = path.join(broken, 'x.js');
+      fs.writeFileSync(file, 'module.exports = 1;\n');
+      assert.match(runHook(file),
+        /^ESLint could not lint x\.js: Error \[ERR_MODULE_NOT_FOUND\]: Cannot find package 'no-such-package-ccsl'/);
+    }
+    finally {
+      fs.rmSync(broken, { recursive: true, force: true });
+    }
   });
 
   it('says so when ESLint is not installed', () => {
