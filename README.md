@@ -44,7 +44,7 @@ Add to `~/.claude/settings.json`:
 
 ### Refreshing between events
 
-The statusline re-runs only when Claude Code emits an event (new message, `/compact`, mode change). Nothing here is time-based, so no timer is needed. Add `refreshInterval` (seconds) if you want git state to keep up while background subagents work and the main session sits idle:
+The statusline re-runs only when Claude Code emits an event (new message, `/compact`, mode change). Nothing here counts down (the rate limit resets are wall-clock times), so no timer is needed. Add `refreshInterval` (seconds) if you want git state to keep up while background subagents work and the main session sits idle:
 
 ```json
 {
@@ -60,7 +60,7 @@ The statusline re-runs only when Claude Code emits an event (new message, `/comp
 
 ```
 Line 1: 📂 <path>         🔀 <branch>              🚀 <ahead/behind> <+added/-deleted>   📄 <session>
-Line 2: 🔲 <model> (<effort>)  ❤️ [<bar>]<remaining>%  📊 5h <n>% 7d <n>%
+Line 2: 🔲 <model> (<effort>)  ❤️ [<bar>]<remaining>%  📊 5h <n>% (<HH:MM>) 7d <n>% (<M/D HH:MM>)
          ───col1───        ─────col2─────                ───col3───
 ```
 

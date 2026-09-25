@@ -25,7 +25,7 @@ echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_wi
 
 # Test rate limits and session name (all optional in stdin). prompt_cache is
 # read but not drawn, so it changes nothing here.
-echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 5\"},\"effort\":{\"level\":\"high\"},\"session_name\":\"my task\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":32,\"resets_at\":1790000000},\"seven_day\":{\"used_percentage\":68,\"resets_at\":1790500000}},\"prompt_cache\":{\"warm\":true}}" | node index.js
+echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 5\"},\"effort\":{\"level\":\"high\"},\"session_name\":\"my task\",\"rate_limits\":{\"five_hour\":{\"used_percentage\":32,\"resets_at\":$(( $(date +%s) + 7200 ))},\"seven_day\":{\"used_percentage\":68,\"resets_at\":$(( $(date +%s) + 259200 ))}},\"prompt_cache\":{\"warm\":true}}" | node index.js
 
 # Test with colleague comment (requires cached comment)
 echo "{\"cwd\":\"$(pwd)\",\"model\":{\"display_name\":\"Opus 4.6\"},\"context_window\":{\"used_percentage\":70}}" | node index.js --colleague-instruction 'Be friendly'
